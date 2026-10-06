@@ -100,11 +100,15 @@ Views.macro = (() => {
     $('#myPlansBtn').onclick = (e) => {
       e.stopPropagation();
       const menu = $('#myPlansMenu');
+      const wrap = $('#myPlansWrap');
       const open = menu.style.display === 'none';
       menu.style.display = open ? 'block' : 'none';
+      // 下拉打开时抬高父级堆叠上下文，避免被工具栏下方的 KPI 卡片（view 入场动画创建的堆叠上下文）遮盖
+      wrap.style.zIndex = open ? '70' : '';
+      wrap.style.position = 'relative';
       if (open) {
         const closer = (ev) => {
-          if (!menu.contains(ev.target)) { menu.style.display = 'none'; document.removeEventListener('click', closer); }
+          if (!menu.contains(ev.target)) { menu.style.display = 'none'; wrap.style.zIndex = ''; document.removeEventListener('click', closer); }
         };
         document.addEventListener('click', closer);
       }
@@ -112,11 +116,12 @@ Views.macro = (() => {
     $$('[data-mpick]').forEach((it) => {
       it.onclick = (ev) => {
         ev.stopPropagation();
-        if (Store.data.settings.activeMacroId === it.dataset.mpick) { $('#myPlansMenu').style.display = 'none'; return; }
+        if (Store.data.settings.activeMacroId === it.dataset.mpick) { $('#myPlansMenu').style.display = 'none'; $('#myPlansWrap').style.zIndex = ''; return; }
         Store.data.settings.activeMacroId = it.dataset.mpick;
         Store.save();
         const menu = $('#myPlansMenu');
         if (menu) menu.style.display = 'none';
+        $('#myPlansWrap').style.zIndex = '';
         remount();
         UI.toast('已切换训练计划', 'ok');
       };
@@ -155,8 +160,11 @@ Views.macro = (() => {
       e.stopPropagation();
       const open = refMenu.style.display === 'none';
       refMenu.style.display = open ? 'block' : 'none';
+      // 下拉打开时抬高父级堆叠上下文，避免被工具栏下方的 KPI 卡片遮盖（同「我的计划」下拉）
+      refMenu.parentElement.style.zIndex = open ? '70' : '';
+      refMenu.parentElement.style.position = 'relative';
       if (open) {
-        const closer = (ev) => { if (!refMenu.contains(ev.target)) { refMenu.style.display = 'none'; document.removeEventListener('click', closer); } };
+        const closer = (ev) => { if (!refMenu.contains(ev.target)) { refMenu.style.display = 'none'; refMenu.parentElement.style.zIndex = ''; document.removeEventListener('click', closer); } };
         document.addEventListener('click', closer);
       }
     };
@@ -164,6 +172,7 @@ Views.macro = (() => {
       it.onclick = (ev) => {
         ev.stopPropagation();
         refMenu.style.display = 'none';
+        refMenu.parentElement.style.zIndex = '';
         modelDetailDialog(MODELS.find((m) => m.id === it.dataset.modelref));
       };
     });
