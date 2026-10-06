@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sharp Fit</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar" aria-label="主导航">
+      <div class="brand">
+        <div class="brand-mark">
+          <span class="b1"></span><span class="b2"></span><span class="b3"></span>
+          <span class="brand-trend"></span>
+        </div>
+        <div class="brand-txt">
+          <strong>Sharp Fit</strong>
+          <em>STRENGTH · PERIODIZATION</em>
+        </div>
+      </div>
+      <nav id="nav" aria-label="功能导航"></nav>
+      <div class="side-foot">
+        <p class="ver">v1.0 · 本地离线存储</p>
+        <button class="btn link sm" id="loadDemo" type="button">载入示例</button>
+        <button class="btn link sm" id="contactDev" type="button">联系开发者</button>
+      </div>
+    </aside>
+    <main id="main">
+      <header id="topbar">
+        <div class="tb-left">
+          <h1 id="pageTitle">大周期</h1>
+          <p id="pageSub"></p>
+        </div>
+        <div class="tb-right" id="topbarRight"></div>
+      </header>
+      <section id="view" aria-live="polite"></section>
+    </main>
+  </div>
+  <div id="toastWrap" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/sports.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/views/macro.js"></script>
+  <script src="js/views/meso.js"></script>
+  <script src="js/views/micro.js"></script>
+  <script src="js/views/session.js"></script>
+  <script src="js/views/load.js"></script>
+  <script src="js/views/exercises.js"></script>
+  <script src="js/views/profile.js"></script>
+  <script src="js/views/kpi.js"></script>
+  <script src="js/views/kpiLab.js"></script>
+  <script src="js/demo.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "name": "training-plan-platform",
+  "productName": "Sharp Fit",
+  "version": "1.0.0",
+  "description": "体能教练训练计划管理平台",
+  "main": "main.js",
+  "author": "Coach",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "node scripts/copy-echarts.js",
+    "start": "electron .",
+    "icon": "node scripts/gen-icon.js",
+    "pack": "electron-builder --mac dir",
+    "dist": "electron-builder --mac dmg",
+    "test": "node tests/db-guard.test.js"
+  },
+  "devDependencies": {
+    "echarts": "^5.5.1",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "jsdom": "^29.1.1",
+    "ws": "^8.22.0"
+  },
+  "build": {
+    "appId": "com.coach.sharpfit",
+    "productName": "Sharp Fit",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "db-guard.js",
+      "tokens.css",
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.sports",
+      "icon": "build/icon.icns",
+      "identity": null
+    },
+    "dmg": {
+      "title": "Sharp Fit",
+      "artifactName": "Sharp Fit-${version}-${arch}.dmg"
+    }
+  }
+}

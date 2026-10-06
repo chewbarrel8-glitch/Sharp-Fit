@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+release/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Local tooling state
+.trae/
+.hallmark/
+
+# Test artifacts
+scripts/shots/
+
+# Data & backups（用户数据目录在系统 Application Support，此处以防万一）
+db.json
+db.json.bak*
+*.bak-auto-*
