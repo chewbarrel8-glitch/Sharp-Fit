@@ -1288,8 +1288,8 @@ Views.macro = (() => {
             { name: '能量储备 (CTL·42d)', type: 'line', data: fF, smooth: true, showSymbol: false, lineStyle: { color: UI.tint('var(--color-success)', .7), width: 1.8 }, itemStyle: { color: UI.cssVar('var(--color-success)') } },
             { name: '疲劳 (ATL·7d)', type: 'line', data: fA, smooth: true, showSymbol: false, lineStyle: { color: UI.tint('var(--color-warning)', .7), width: 1.8 }, itemStyle: { color: UI.cssVar('var(--color-warning)') } },
             { name: '峰值状态', type: 'line', data: cForm, smooth: true, showSymbol: false,
-              lineStyle: { color: UI.cssVar('var(--color-accent)'), width: 3, shadowColor: UI.tint('var(--color-accent)', .5), shadowBlur: 10 }, itemStyle: { color: UI.cssVar('var(--color-accent)') },
-              areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: UI.tint('var(--color-accent)', .18) }, { offset: 1, color: UI.tint('var(--color-accent)', 0) }] } },
+              lineStyle: { color: UI.cssVar('var(--color-danger)'), width: 3, shadowColor: UI.tint('var(--color-danger)', .5), shadowBlur: 10 }, itemStyle: { color: UI.cssVar('var(--color-danger)') },
+              areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: UI.tint('var(--color-danger)', .18) }, { offset: 1, color: UI.tint('var(--color-danger)', 0) }] } },
               markArea: { silent: true, data: markAreas },
               markLine: { symbol: 'none', silent: true, lineStyle: { color: UI.tint('var(--color-danger)', .35), width: 1, type: 'dashed' }, label: { show: false }, data: compIn.map((c) => ({ xAxis: c.date })) } }
           ]
@@ -1323,8 +1323,8 @@ Views.macro = (() => {
             { name: '能量储备 (CTL·42d)', type: 'line', yAxisIndex: 1, data: fF, smooth: true, showSymbol: false, lineStyle: { color: UI.tint('var(--color-success)', .7), width: 1.8 }, itemStyle: { color: UI.cssVar('var(--color-success)') } },
             { name: '疲劳 (ATL·7d)', type: 'line', yAxisIndex: 1, data: fA, smooth: true, showSymbol: false, lineStyle: { color: UI.tint('var(--color-warning)', .7), width: 1.8 }, itemStyle: { color: UI.cssVar('var(--color-warning)') } },
             { name: '峰值状态', type: 'line', yAxisIndex: 1, data: cForm, smooth: true, showSymbol: false,
-              lineStyle: { color: UI.cssVar('var(--color-accent)'), width: 3, shadowColor: UI.tint('var(--color-accent)', .5), shadowBlur: 10 }, itemStyle: { color: UI.cssVar('var(--color-accent)') },
-              areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: UI.tint('var(--color-accent)', .12) }, { offset: 1, color: UI.tint('var(--color-accent)', 0) }] } },
+              lineStyle: { color: UI.cssVar('var(--color-danger)'), width: 3, shadowColor: UI.tint('var(--color-danger)', .5), shadowBlur: 10 }, itemStyle: { color: UI.cssVar('var(--color-danger)') },
+              areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: UI.tint('var(--color-danger)', .12) }, { offset: 1, color: UI.tint('var(--color-danger)', 0) }] } },
               markArea: { silent: true, data: markAreas } }
           ]
         }, true);

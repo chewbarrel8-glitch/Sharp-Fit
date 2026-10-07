@@ -909,10 +909,10 @@ const Calc = {
     });
   },
 
-  // ---------- 三量纲体系：重量行(kg, 次×重量) / 距离行(m) / 时间行(s) ----------
+  // ---------- 五量纲体系：重量行(kg, 次×重量) / 自重行(BW, 只计次不计吨位) / 距离行(m) / 时间行(s) / 无负荷行(—, 只记组数) ----------
   // 行单位：优先行内显式 unit（教练可在动作表手改），否则按动作库量纲+负荷类型自动判定，旧数据按字段启发式回退
   rowUnit(r) {
-    if (r && ['kg', 'm', 's'].includes(r.unit)) return r.unit;
+    if (r && ['kg', 'm', 's', 'bw', 'none'].includes(r.unit)) return r.unit;
     const ex = r && r.exId ? Store.exercise(r.exId) : null;
     if (ex && ex.metric === 'distance') return 'm';
     if (ex && ex.metric === 'duration') return 's';
@@ -920,33 +920,38 @@ const Calc = {
       if (r && r.dist != null && r.dist !== '') return 'm';
       if (r && r.dur != null && r.dur !== '') return 's';
     }
+    if (ex && ex.loadType === 'bodyweight') return 'bw';
     return 'kg';
   },
-  // 选动作时自动带出的单位（抗阻/自重次数→kg，距离量纲→m，时间量纲→s）
+  // 选动作时自动带出的单位（自重次数→BW，距离量纲→m，时间量纲→s，抗阻次数→kg）
   autoUnitOf(ex) {
     if (ex && ex.metric === 'distance') return 'm';
     if (ex && ex.metric === 'duration') return 's';
+    if (ex && ex.loadType === 'bodyweight') return 'bw';
     return 'kg';
   },
-  // 行量纲：kg→reps（次/重量行），m→distance，s→duration
+  // 行量纲：kg/BW→reps（次/重量行；BW 自重行只计次数不计吨位），m→distance，s→duration，none→无负荷
   metricOf(r) {
     const u = r && r.unit ? r.unit : null;
-    if (u === 'kg') return 'reps';
+    if (u === 'kg' || u === 'bw') return 'reps';
     if (u === 'm') return 'distance';
     if (u === 's') return 'duration';
+    if (u === 'none') return 'none';
     const ex = r && r.exId ? Store.exercise(r.exId) : null;
-    if (ex && ex.metric) return ex.metric;
+    if (ex && ex.metric) return ex.metric === 'reps' && ex.loadType === 'bodyweight' ? 'reps' : ex.metric;
     if (r && r.dist != null && r.dist !== '') return 'distance';
     if (r && r.dur != null && r.dur !== '') return 'duration';
     return 'reps';
   },
   loadTypeOf(r) {
+    if (r && r.unit === 'bw') return 'bodyweight';
+    if (r && r.unit === 'none') return 'none';
     const ex = r && r.exId ? Store.exercise(r.exId) : null;
     if (ex && ex.loadType) return ex.loadType;
     if (r && r.exId) return (r.weight ? 'resistance' : 'bodyweight');
     return 'resistance';   // 未选动作的新行：按抗阻行展示 %1RM/重量列（选择自重/能量系统动作后自动收起）
   },
-  // 单行单组剂量（计划）：次数=reps；距离统一米（distUnit=km 换算）；做功时间统一秒（durUnit=min 换算）
+  // 单行单组剂量（计划）：次数=reps；距离统一米（distUnit=km 换算）；做功时间统一秒（durUnit=min 换算）；无负荷=0
   rowPerSet(r) {
     const metric = Calc.metricOf(r);
     if (metric === 'distance') {
@@ -957,10 +962,12 @@ const Calc = {
       const d = Number(r.dur) || 0;
       return r.durUnit === 'min' ? d * 60 : d;
     }
+    if (metric === 'none') return 0;
     return Number(r.reps) || 0;
   },
   // 单行计划总剂量：逐组明细 = Σ 各组（热身+正式）单组量；否则 组×单组剂量
   planRowDose(r) {
+    if (Calc.metricOf(r) === 'none') return 0;
     if (Array.isArray(r.setDefs) && r.setDefs.length) return U.sum(r.setDefs, (d) => Calc.setDefDose(r, d));
     return (Number(r.sets) || 0) * Calc.rowPerSet(r);
   },
@@ -968,6 +975,7 @@ const Calc = {
   setDefDose(r, d) {
     d = d || {};
     const metric = Calc.metricOf(r);
+    if (metric === 'none') return 0;
     if (metric === 'distance') {
       const v = Number(d.dist) || 0;
       return d.distUnit === 'km' ? v * 1000 : v;

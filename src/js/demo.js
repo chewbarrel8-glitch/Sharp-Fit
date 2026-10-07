@@ -140,7 +140,7 @@ window.seedDemo = function seedDemo() {
   };
   const mRow = (name, sets, dist) => ({ exId: exRef(name).id, pct: null, weight: null, sets, reps: null, dist, dur: null, unit: 'm', actual: null });
   const tRow = (name, sets, dur) => ({ exId: exRef(name).id, pct: null, weight: null, sets, reps: null, dist: null, dur, unit: 's', actual: null });
-  const bwRow = (name, sets, reps) => ({ exId: exRef(name).id, pct: null, weight: null, sets, reps, dist: null, dur: null, actual: null });
+  const bwRow = (name, sets, reps) => ({ exId: exRef(name).id, unit: 'bw', pct: null, weight: null, sets, reps, dist: null, dur: null, actual: null });
 
   const strengthRows = (type, wk) => {
     if (type === '最大力量') {

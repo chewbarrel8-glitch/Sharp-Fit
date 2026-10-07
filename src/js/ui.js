@@ -104,19 +104,23 @@ const UI = {
       for (const c1 of Object.keys(byC1).sort()) {
         for (const c2 of Object.keys(byC1[c1])) {
           html += `<optgroup label="${U.esc(c1)} · ${U.esc(c2)}">`;
-          for (const ex of byC1[c1][c2]) html += `<option value="${ex.id}">${U.esc(ex.name)}${athleteId && !effRm(ex.id) ? '（未设1RM）' : ''}</option>`;
+          for (const ex of byC1[c1][c2]) {
+            // 动作名前直接带分类路径，下拉列表中无需看分组标题也能快速定位
+            const noRm = athleteId && Calc.autoUnitOf(ex) === 'kg' && !effRm(ex.id) ? '（未设1RM）' : '';
+            html += `<option value="${ex.id}">${U.esc(c1)} · ${U.esc(c2)} · ${U.esc(ex.name)}${noRm}</option>`;
+          }
           html += '</optgroup>';
         }
       }
       return html;
     };
 
-    // 行单位：kg 重量行 / m 距离行 / s 时间行（选动作自动带出，可手动改，自动归入对应负荷分析）
-    const UNITS = [['kg', '重量 kg'], ['m', '距离 m'], ['s', '时间 s']];
-    const unitCell = (r) => `<select class="sel ex-unit-main" data-f="unit" title="本行负荷单位（选动作时自动带出，可手动切换）">
-      ${UNITS.map(([u, lbl]) => `<option value="${u}" ${Calc.rowUnit(r) === u ? 'selected' : ''}>${u === 'kg' ? 'kg' : u === 'm' ? 'm' : 's'}</option>`).join('')}
+    // 行单位：kg 重量行（计吨位）/ BW 自重行（计次数不计吨位）/ m 距离行 / s 时间行 / — 无负荷（只记组数）
+    const UNITS = [['kg', 'kg'], ['bw', 'BW'], ['m', 'm'], ['s', 's'], ['none', '—']];
+    const unitCell = (r) => `<select class="sel ex-unit-main" data-f="unit" title="本行负荷单位：kg=外部重量（计吨位，可设%1RM）；BW=自重（计次数，不计吨位）；m=距离；s=时间；—=无负荷（只记组数）">
+      ${UNITS.map(([u, lbl]) => `<option value="${u}" ${Calc.rowUnit(r) === u ? 'selected' : ''}>${lbl}</option>`).join('')}
     </select>`;
-    // 行内剂量片段：重量行录次/组；距离行录单组距离（统一米）；时间行录单组做功（统一秒）
+    // 行内剂量片段：重量/自重行录次/组；距离行录单组距离（统一米）；时间行录单组做功（统一秒）；无负荷行不录量
     const doseCell = (r) => {
       const m = Calc.metricOf(r);
       if (m === 'distance') {
@@ -125,11 +129,13 @@ const UI = {
       if (m === 'duration') {
         return `<input class="ipt" data-f="dur" type="number" min="0" step="any" value="${r.dur ?? ''}">`;
       }
+      if (m === 'none') return '<span class="hint">—</span>';
       return `<input class="ipt" data-f="reps" type="number" min="0" value="${r.reps ?? ''}">`;
     };
-    // 实际完成（课后）：总次数 / 总距离 m / 总做功 s（距离统一米、做功统一秒）
+    // 实际完成（课后）：总次数 / 总距离 m / 总做功 s（距离统一米、做功统一秒）；无负荷行不录
     const actualCell = (r) => {
       const m = Calc.metricOf(r);
+      if (m === 'none') return '<span class="hint">—</span>';
       const unit = m === 'reps' ? '次' : m === 'distance' ? 'm' : 's';
       return `<input class="ipt" data-f="actual" type="number" min="0" step="any" value="${r.actual ?? ''}" style="width:calc(100% - 30px);min-width:0"><small class="hint" style="width:26px;text-align:right">${unit}</small>`;
     };
@@ -150,11 +156,13 @@ const UI = {
       if (direct) return `${U.fmt(Math.round(direct))} <small>kg</small>`;
       return `<span class="hint" title="kg 行吨位 = 重量 × 组 × 单组次数；为参训运动员设置 1RM（档案页或课后「更新1RM」）后按 %1RM 自动折算">${U.fmt(dose)} <small>次</small><br><span style="font-size:10px">待设1RM</span></span>`;
     };
-    // 本行负荷（课后口径）：kg=吨位；距离=总米；时间=总秒（折分钟）
+    // 本行负荷（课后口径）：kg=吨位；BW=总次数（自重，不计吨位）；距离=总米；时间=总秒（折分钟）；—=无
     const loadCell = (r) => {
+      const u = Calc.rowUnit(r);
+      if (u === 'none') return '—';
       const m = Calc.metricOf(r);
       const dose = Calc.planRowDose(r);
-      if (!dose) return '—';
+      if (m === 'reps' && u === 'bw') return dose ? `${U.fmt(dose)} <small>次</small><br><span class="hint" style="font-size:10px">自重</span>` : '<span class="hint">自重</span>';
       if (m === 'reps') return kgLoadCell(r);
       if (m === 'distance') {
         const band = { sprint: '冲刺', hsr: '高速', moderate: '中速', aerobic: '有氧' }[Calc.rowSpeedBand(r)];
@@ -162,9 +170,15 @@ const UI = {
       }
       return `${U.fmt(dose)} <small>s</small> · ${U.fmt(Math.round(dose / 6) / 10)} <small>min</small>`;
     };
-    // 计划模式「总负荷」：随单位自动计算——kg 行=吨位（单人/团队 1RM 折算）；距离行=总米；时间行=总秒
+    // 计划模式「总负荷」：随单位自动计算——kg 行=吨位（单人/团队 1RM 折算）；BW=总次数；距离行=总米；时间行=总秒；—=无
     const planLoadCell = (r) => {
+      const u = Calc.rowUnit(r);
+      if (u === 'none') return '<span class="hint">—</span>';
       const m = Calc.metricOf(r);
+      if (m === 'reps' && u === 'bw') {
+        const dose = Calc.planRowDose(r);
+        return dose ? `${U.fmt(dose)} <small>次</small><br><span class="hint" style="font-size:10px">自重</span>` : '<span class="hint">自重</span>';
+      }
       if (m === 'reps') return kgLoadCell(r);
       const dose = Calc.planRowDose(r);
       if (!dose) return '<span class="hint">—</span>';
@@ -191,13 +205,16 @@ const UI = {
 
     // 单个逐组定义的输入片段（计划层）：类型切换 + %1RM/重量 + 单组量
     const setDefCell = (r, d, idx) => {
+      const u = Calc.rowUnit(r);
       const m = Calc.metricOf(r);
       const dose = m === 'distance'
         ? `<input class="ipt" data-sd="${idx}" data-sf="dist" type="number" min="0" step="any" value="${d.dist ?? ''}" style="width:70px">`
         : m === 'duration'
           ? `<input class="ipt" data-sd="${idx}" data-sf="dur" type="number" min="0" step="any" value="${d.dur ?? ''}" style="width:70px">`
-          : `<input class="ipt" data-sd="${idx}" data-sf="reps" type="number" min="0" value="${d.reps ?? ''}" style="width:50px">`;
-      const pctW = m === 'reps'
+          : m === 'none'
+            ? '<span class="hint" style="min-width:70px">—</span>'
+            : `<input class="ipt" data-sd="${idx}" data-sf="reps" type="number" min="0" value="${d.reps ?? ''}" style="width:50px">`;
+      const pctW = u === 'kg'
         ? `<input class="ipt" data-sd="${idx}" data-sf="pct" type="number" min="0" max="200" placeholder="%" value="${d.pct ?? ''}" style="width:56px" title="该组 %1RM">
            ${pctOnly ? '' : `<input class="ipt" data-sd="${idx}" data-sf="weight" type="number" min="0" step="0.5" placeholder="kg" value="${d.weight ?? ''}" style="width:64px" title="该组重量（留空按 %1RM 折算）">`}`
         : '<span class="hint" style="min-width:110px">—</span>';
@@ -212,6 +229,7 @@ const UI = {
         if (m === 'reps') { row.dist = null; row.distUnit = 'm'; row.dur = null; row.durUnit = 's'; }
         if (m === 'distance') { row.reps = null; row.dur = null; row.durUnit = 's'; }
         if (m === 'duration') { row.reps = null; row.dist = null; row.distUnit = 'm'; }
+        if (m === 'none') { row.reps = null; row.dist = null; row.dur = null; row.pct = null; row.weight = null; }
         row.actual = null;
       };
 
@@ -226,7 +244,7 @@ const UI = {
       let body = '';
       let lastBlk = null;
       (rows || []).forEach((r, i) => {
-        const isKg = Calc.metricOf(r) === 'reps';
+        const isKg = Calc.rowUnit(r) === 'kg';
         const ex = Store.exercise(r.exId);
         const hasDefs = Array.isArray(r.setDefs) && r.setDefs.length;
         const isExpanded = expanded.has(r);
@@ -313,7 +331,7 @@ const UI = {
           <button class="btn sm ghost ex-add">＋ 添加动作</button>
           <div class="tot-line" style="padding:0;gap:14px;flex-wrap:wrap">
             ${planMode ? '' : `<span class="hint">${pctOnly ? '计划重量按每人 1RM 内部换算（此处只显示 %1RM）· 实际重量课后按人填写' : `重量按 ${rmContext()} 计算`}</span>`}
-            ${sumBits.length ? sumBits.map((s) => `<span>${s}</span>`).join('') : '<span class="hint">每个动作可选单位：重量 kg / 距离 m / 时间 s；总负荷自动汇总并纳入负荷分析；点击 ▸ 可逐组设计热身+正式组</span>'}
+            ${sumBits.length ? sumBits.map((s) => `<span>${s}</span>`).join('') : '<span class="hint">单位可选：kg 重量（计吨位）/ BW 自重（计次）/ m 距离 / s 时间 / — 无负荷（只记组数）；点击 ▸ 可逐组设计热身+正式组</span>'}
           </div>
         </div>`;
 
@@ -389,8 +407,8 @@ const UI = {
         if (f === 'del') { r.setDefs.splice(si, 1); render(); onChanged && onChanged(); return; }
         const v = inp.value === '' ? null : Number(inp.value);
         d[f] = (v != null && isNaN(v)) ? null : v;
-        // %1RM↔重量 联动（组内）
-        if (!planMode && Calc.metricOf(r) === 'reps') {
+        // %1RM↔重量 联动（组内，仅 kg 重量行）
+        if (!planMode && Calc.rowUnit(r) === 'kg') {
           const rm = r.exId ? effRm(r.exId) : null;
           if (f === 'pct' && rm && v) d.weight = Calc.weightFromPct(rm, v);
           else if (f === 'weight' && rm && v) d.pct = Calc.pctFromWeight(rm, v);
@@ -431,7 +449,7 @@ const UI = {
       // 行级数字字段
       $$('.tbl tbody tr[data-i]', wrap).forEach((tr) => {
         const i = Number(tr.dataset.i);
-        const isKg = Calc.metricOf(rows[i] || {}) === 'reps';
+        const isKg = Calc.rowUnit(rows[i] || {}) === 'kg';
         const numFields = planMode
           ? (isKg ? ['pct', 'sets', 'reps', 'dist', 'dur'] : ['sets', 'reps', 'dist', 'dur'])
           : (() => {
