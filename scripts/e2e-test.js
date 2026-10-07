@@ -1026,7 +1026,8 @@ async function finalize(code) {
     const ach = echarts.getInstanceByDom(el.querySelector('#chMesoActual'));
     const aOpt = ach ? ach.getOption() : null;
     return {
-      hasReps: el.innerHTML.includes('计划总次数'),
+      hasReps: el.innerHTML.includes('总次数 计划/实际'),
+      hasPair: ['吨位 计划/实际', '总距离 计划/实际', '做功时长 计划/实际'].every((s) => el.innerHTML.includes(s)),
       noOld: !el.innerHTML.includes('中周期总吨位') && !el.innerHTML.includes('力量训练日') && !el.innerHTML.includes('平均强度'),
       names,
       noMicFilter: !el.querySelector('#mesoMicFilter'),
@@ -1036,8 +1037,8 @@ async function finalize(code) {
       courseKg: dayT ? [...dayT.querySelectorAll('.hint')].some((h) => /\\d+(\\.\\d+)?\\s*kg/.test(h.textContent)) : null,
       courseHint: dayT ? [...dayT.querySelectorAll('.hint')].some((h) => h.textContent.includes('个动作')) : null
     };
-  })()`, (v) => !!v && v.hasReps && v.names.length > 0);
-  assert(mesoCurves && mesoCurves.hasReps && mesoCurves.noOld, '中周期 KPI 保留计划总次数并显示训练课类别次数');
+  })()`, (v) => !!v && v.hasReps && v.hasPair && v.names.length > 0);
+  assert(mesoCurves && mesoCurves.hasReps && mesoCurves.hasPair && mesoCurves.noOld, '中周期 KPI 全部为【计划/实际】口径（吨位/次数/距离/时长/课型天数，实际=完成训练课后统计）');
   assert(mesoCurves && ['负荷（AU）', '量（kg，实际）', '疲劳（AU）', '峰值状态（AU）'].every((n) => mesoCurves.names.includes(n)), '中周期曲线含 负荷-实际量-疲劳-峰值状态');
   assert(mesoCurves && mesoCurves.noMicFilter && mesoCurves.actualBars === mesoCurves.nW, `实际负荷统计图无下拉且与周标签同口径逐周出柱（${mesoCurves && mesoCurves.actualBars}/${mesoCurves && mesoCurves.nW} 周）`);
   assert(mesoCurves && mesoCurves.courseKg === false && mesoCurves.courseHint, '课程设计不显示重量 kg，显示动作数量');

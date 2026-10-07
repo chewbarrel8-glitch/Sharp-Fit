@@ -355,12 +355,12 @@ window.seedDemo = function seedDemo() {
             id: U.uid('le'), athleteId: a.id, date: day.date, rpe,
             duration: ses.duration, load: rpe * ses.duration, source: 'session', sessionId: ses.id, note: ses.name
           });
-          // 力量课：逐人实际重量/完成组次/RIR；其它课型标记为已完成（保护中周期双向映射）
+          // 力量课：逐人实际重量/完成组次/RIR（actualOwn 标记教练已录入，计入实际口径统计）；其它课型标记为已完成（保护中周期双向映射）
           ses.results[a.id] = ses.rows.map((r) => {
             if (Calc.metricOf(r) === 'reps' && r.exId) {
               const rm = Store.athRm(a.id, r.exId);
               const w = rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight;
-              return { w, actual: (Number(r.sets) || 0) * (Number(r.reps) || 0), rir: 2 };
+              return { w, actual: (Number(r.sets) || 0) * (Number(r.reps) || 0), rir: 2, actualOwn: true };
             }
             return { w: null, actual: null, rir: 2 };
           });

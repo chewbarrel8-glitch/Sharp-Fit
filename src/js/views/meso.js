@@ -391,18 +391,50 @@ Views.meso = (() => {
         <div>
           <div class="kpis" style="grid-template-columns:1fr 1fr">
             ${(() => {
+              // ── 计划口径：每人处方 × 参训人数（与吨位卡同口径 = 全队总量）
+              // ── 实际口径：本中周期日期范围内训练课的实际完成累加（actualOnly：未填实际完成不计）
+              const nAth = ((macObj && macObj.athletes) || []).length;
+              const act = { kg: 0, m: 0, s: 0, reps: 0 };
+              const actTypeDays = {};   // 已完成训练课的日期 → 课型集合（同日多课按天去重）
+              for (const ses of Store.data.sessions) {
+                if (ses.date < meso.startDate || ses.date > meso.endDate) continue;
+                const d = Store.sessionActualDose(ses, null, { actualOnly: true });
+                act.kg += d.kg; act.m += d.m; act.s += d.s; act.reps += d.reps;
+                if (d.kg || d.m || d.s || d.reps || Store.hasCompletedLoad(ses)) {
+                  actTypeDays[ses.date] = actTypeDays[ses.date] || new Set();
+                  if (ses.type) actTypeDays[ses.date].add(ses.type);
+                }
+              }
+              const actDays = {};
+              for (const dt of Object.keys(actTypeDays)) for (const t of actTypeDays[dt]) actDays[t] = (actDays[t] || 0) + 1;
+              // 实际休息天数：计划休息日中已过且当日无已完成训练课
+              const doneDates = new Set(Object.keys(actTypeDays));
+              let restAct = 0;
+              for (const dy of (meso.days || [])) {
+                if (dy.date < meso.startDate || dy.date > meso.endDate || !dy.rest) continue;
+                if (dy.date > U.today() || doneDates.has(dy.date)) continue;
+                restAct++;
+              }
+              // 【计划/实际】数值对：两侧各自按量级选单位（t/kg、km、min）；实际为 0 显示 —
+              const side = (v, unit, dec) => `${U.fmt(v, dec)}<small>${unit}</small>`;
+              const kgSide = (kg) => kg >= 10000 ? side(Math.round(kg / 100) / 10, 't', 1) : side(Math.round(kg), 'kg', 0);
+              const tip = `title="计划：每人处方 × 参训 ${nAth} 人（全队口径）；实际：训练课实际完成累加，未填实际完成不计"`;
               const teamT = Calc.rowsTeamTonnage(allRows, (macObj && macObj.athletes) || []);
-              const tonKg = teamT.kg >= 10000 ? Math.round(teamT.kg / 100) / 10 : Math.round(teamT.kg);
-              const tonUnit = teamT.kg >= 10000 ? 't' : 'kg';
-              return teamT.kg
-                ? `<div class="kpi volt"><div class="k">计划吨位（${teamT.nW}/${teamT.n} 人有1RM）</div><div class="v">${U.fmt(tonKg, 1)}<small>${tonUnit}</small></div></div>`
-                : `<div class="kpi"><div class="k">计划吨位</div><div class="v" title="为参训运动员设置 1RM 后，kg 行按 %1RM 自动折算吨位">待设<small>1RM</small></div></div>`;
+              const tonPlan = teamT.kg ? kgSide(teamT.kg) : '待设<small>1RM</small>';
+              const cards = [];
+              cards.push(`<div class="kpi ${teamT.kg ? 'volt' : ''}"><div class="k">吨位 计划/实际（${teamT.nW}/${teamT.n} 人有1RM）</div><div class="v" ${tip}>${tonPlan} / ${act.kg ? kgSide(act.kg) : '—'}</div></div>`);
+              cards.push(`<div class="kpi warn"><div class="k">总次数 计划/实际</div><div class="v" ${tip}>${side(Calc.rowsReps(allRows) * nAth, '次')} / ${act.reps ? side(act.reps, '次') : '—'}</div></div>`);
+              cards.push(`<div class="kpi info"><div class="k">总距离 计划/实际</div><div class="v" ${tip}>${side(Math.round(Calc.rowsDistance(allRows) * nAth / 100) / 10, 'km', 1)} / ${act.m ? side(Math.round(act.m / 100) / 10, 'km', 1) : '—'}</div></div>`);
+              cards.push(`<div class="kpi"><div class="k">做功时长 计划/实际</div><div class="v" ${tip}>${side(Math.round(Calc.rowsDuration(allRows) * nAth / 6) / 10, 'min', 1)} / ${act.s ? side(Math.round(act.s / 6) / 10, 'min', 1) : '—'}</div></div>`);
+              // 课型天数（计划=小周期每日安排类型；实际=已完成训练课按天去重），实际休息=已过的计划休息日且当日无课
+              const types = [...new Set([...Object.keys(typeCounts), ...Object.keys(actDays)])];
+              for (const t of types) {
+                const pn = typeCounts[t] || 0;
+                const an = t === '休息' ? Math.max(actDays[t] || 0, restAct) : (actDays[t] || 0);
+                cards.push(`<div class="kpi ${TYPE_KPI[t] || ''}"><div class="k">${U.esc(t)} 计划/实际</div><div class="v">${pn}<small>天</small> / ${an ? an + '<small>天</small>' : '—'}</div></div>`);
+              }
+              return cards.join('');
             })()}
-            <div class="kpi warn"><div class="k">计划总次数</div><div class="v">${U.fmt(Calc.rowsReps(allRows))}<small>次</small></div></div>
-            <div class="kpi info"><div class="k">计划总距离</div><div class="v">${U.fmt(Math.round(Calc.rowsDistance(allRows) / 100) / 10, 1)}<small>km</small></div></div>
-            <div class="kpi"><div class="k">计划做功时长</div><div class="v">${U.fmt(Math.round(Calc.rowsDuration(allRows) / 6) / 10, 1)}<small>min</small></div></div>
-            ${Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).map(([t, n]) =>
-              `<div class="kpi ${TYPE_KPI[t] || ''}"><div class="k">${U.esc(t)}</div><div class="v">${n}<small>天</small></div></div>`).join('')}
           </div>
         </div>
       </div>
