@@ -665,7 +665,8 @@ const UI = {
   // ---------- 图表 ----------
   charts: [],
   chart(el) {
-    const c = echarts.init(el, null, { renderer: 'canvas' });
+    // echarts.init 对已有实例的 dom 会返回原实例（开发态有警告），这里显式复用并避免重复登记
+    const c = (echarts.getInstanceByDom && echarts.getInstanceByDom(el)) || echarts.init(el, null, { renderer: 'canvas' });
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // 全局默认：直角坐标系图表悬停即显示该点（整列）数据；gauge/pie/radar/heatmap 等在各自 setOption 中显式 trigger:'item' 覆盖
     c.setOption({
@@ -679,7 +680,7 @@ const UI = {
       aria: { enabled: true, decal: { show: true } },
       tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon)
     });
-    UI.charts.push(c);
+    if (!UI.charts.includes(c)) UI.charts.push(c);
     return c;
   },
   disposeCharts() { UI.charts.forEach((c) => c.dispose()); UI.charts = []; },
