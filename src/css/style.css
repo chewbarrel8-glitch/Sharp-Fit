@@ -1019,6 +1019,9 @@ button.nav-item {
   border-bottom-color: color-mix(in oklch, var(--color-border) 85%, transparent);
   background: color-mix(in oklch, var(--color-background) 80%, transparent);
   backdrop-filter: blur(18px) saturate(125%);
+  /* backdrop-filter 自建堆叠上下文，#view 在 DOM 中靠后会整体盖住顶栏下拉（我的计划/周期模型参考），必须抬层 */
+  position: relative;
+  z-index: 40;
 }
 .tb-left h1 { font-size: 19px; letter-spacing: 0.015em; }
 .tb-left p { max-width: 62ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

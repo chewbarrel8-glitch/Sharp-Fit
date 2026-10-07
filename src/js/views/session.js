@@ -341,7 +341,7 @@ Views.session = (() => {
         if (!athIds.length) { box.innerHTML = ''; return; }
         ensureResults(ses);
         const planW = (aid, r) => { const rm = Store.athRm(aid, r.exId); return rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight; };
-        // 每人实际完成的单位/占位（随行动量纲：次 / m / s，距离统一米、做功统一秒；无负荷行为空）
+        // 每人实际完成的单位/占位（随行动量纲：次 / m / s，距离统一米、做功统一秒；无负荷行同样计次）
         const actualUnit = (r) => {
           const m = Calc.metricOf(r);
           return m === 'reps' ? '次' : m === 'distance' ? 'm' : m === 'duration' ? 's' : '';
@@ -383,7 +383,6 @@ Views.session = (() => {
                   <tbody>${rows.map((r, i) => {
                     const ex = Store.exercise(r.exId);
                     const isKg = Calc.rowUnit(r) === 'kg';
-                    const isNone = Calc.metricOf(r) === 'none';
                     const lt = Calc.loadTypeOf(r);
                     const pw = planW(aid, r);
                     const rs = res[i] || {};
@@ -406,7 +405,7 @@ Views.session = (() => {
                             : `<button class="btn sm primary" data-uprm="${aid}:${i}" style="padding:2px 8px;font-size:10px">更新1RM</button>`}</span>`
                           : '<span class="hint" style="font-size:10px">—</span>';
                     // 逐组记录模式（计划已展开 setDefs）
-                    const rowLabel = `<span class="row" style="gap:5px;flex-wrap:nowrap"><button class="btn sm ghost" data-ath-expand="${aid}:${i}" title="展开此运动员的逐组计划与完成记录">${athleteExpanded ? '▾' : '▸'}</button>${complexPosition ? `<span class="blk-badge" title="复杂训练 ${complexPosition}">${complexPosition}</span>` : ''}<span>${U.esc(ex ? ex.name : '—')}</span></span><div class="hint" style="font-size:10px">${({ reps: '次', distance: '距离', duration: '时间', none: '无负荷' })[Calc.metricOf(r)]}${lt === 'resistance' ? ' · 抗阻' : lt === 'bodyweight' ? ' · 自重' : ''}</div>`;
+                    const rowLabel = `<span class="row" style="gap:5px;flex-wrap:nowrap"><button class="btn sm ghost" data-ath-expand="${aid}:${i}" title="展开此运动员的逐组计划与完成记录">${athleteExpanded ? '▾' : '▸'}</button>${complexPosition ? `<span class="blk-badge" title="复杂训练 ${complexPosition}">${complexPosition}</span>` : ''}<span>${U.esc(ex ? ex.name : '—')}</span></span><div class="hint" style="font-size:10px">${({ kg: '次', bw: '次', m: '距离', s: '时间', none: '无负荷' })[Calc.rowUnit(r)] || '次'}${lt === 'resistance' ? ' · 抗阻' : lt === 'bodyweight' ? ' · 自重' : lt === 'none' ? ' · 无负荷' : ''}</div>`;
                     const personalDefs = Array.isArray(rs.setDefs) && rs.setDefs.length ? rs.setDefs : r.setDefs;
                     if (athleteExpanded && Array.isArray(personalDefs) && personalDefs.length && Array.isArray(rs.setLogs) && rs.setLogs.length) {
                       const defs = personalDefs, logs = rs.setLogs;
@@ -419,9 +418,9 @@ Views.session = (() => {
                         return `<tr class="sd-log-row ${d.kind === 'warm' ? 'warm' : 'work'}">
                           <td class="athlete-action-cell"><span class="sd-kind ${d.kind === 'warm' ? 'warm' : 'work'}">${kind} ${k + 1}</span></td>
                           <td class="r num">${isKg ? (d.pct ?? '—') : '—'}</td>
-                          <td class="r num">${planWd && isKg ? U.fmt(planWd) + 'kg' : (planDose && !isNone ? planDose + unit : '—')}</td>
+                          <td class="r num">${planWd && isKg ? U.fmt(planWd) + 'kg' : (planDose ? planDose + unit : '—')}</td>
                           <td class="r">${isKg ? `<input class="ipt" type="number" step="0.5" min="0" style="width:68px;text-align:right" value="${lg.w ?? ''}" data-sl="${aid}:${i}:${k}" data-slf="w" title="该组实际重量">` : '—'}</td>
-                          <td class="r">${isNone ? '—' : `<input class="ipt${lg.own ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:60px;text-align:right" value="${lg.actual ?? ''}" data-sl="${aid}:${i}:${k}" data-slf="actual" title="该组实际完成量（次/m/s）"><small class="hint">${unit}</small>`}</td>
+                          <td class="r">${`<input class="ipt${lg.own ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:60px;text-align:right" value="${lg.actual ?? ''}" data-sl="${aid}:${i}:${k}" data-slf="actual" title="该组实际完成量（次/m/s）"><small class="hint">${unit}</small>`}</td>
                           <td class="r">${isKg ? `<input class="ipt" type="number" min="0" max="10" style="width:46px;text-align:right" value="${lg.rir ?? ''}" data-sl="${aid}:${i}:${k}" data-slf="rir">` : '—'}</td>
                           <td class="c"><input type="checkbox" ${lg.done === false ? '' : 'checked'} data-sl="${aid}:${i}:${k}" data-slf="done" title="该组是否完成"></td>
                           <td class="c"><button class="btn sm ghost ath-set-delete" data-ath-set-delete="${aid}:${i}:${k}" ${d.kind !== 'warm' && formalCount <= 1 ? 'disabled' : ''} title="删除此${kind}组" aria-label="删除此${kind}组">×</button></td>
@@ -430,7 +429,7 @@ Views.session = (() => {
                         return `${complexHeader}<tr>
                           <td class="athlete-action-cell">${rowLabel}</td>
                           <td class="r num">${isKg ? (r.pct ?? '—') : '—'}</td>
-                          <td class="r num">${pw && isKg ? U.fmt(pw) : (isNone ? '—' : U.fmt(Calc.planRowDose(r)))}</td>
+                          <td class="r num">${pw && isKg ? U.fmt(pw) : U.fmt(Calc.planRowDose(r))}</td>
                           <td colspan="3" class="hint" style="font-size:10px">逐组记录（热身组不计入 1RM 估算）</td>
                           <td></td>
                           <td class="r num" data-est="${aid}:${i}">${estCell}</td>
@@ -439,13 +438,13 @@ Views.session = (() => {
                     // 扁平模式
                     const planDoseTxt = isKg
                       ? (pw ? U.fmt(pw) + 'kg' : '—')
-                      : (isNone ? '—' : (Calc.planRowDose(r) ? U.fmt(Calc.planRowDose(r)) + unit : '—'));
+                      : (Calc.planRowDose(r) ? U.fmt(Calc.planRowDose(r)) + unit : '—');
                     return `${complexHeader}<tr>
                       <td class="athlete-action-cell">${rowLabel}</td>
                       <td class="r num">${isKg ? (r.pct ?? '—') : '—'}</td>
                       <td class="r num">${planDoseTxt}</td>
                       <td class="r">${isKg ? `<input class="ipt" type="number" step="0.5" min="0" style="width:68px;text-align:right" value="${rs.w ?? ''}" data-rw="${aid}:${i}" title="实际负重">` : '—'}</td>
-                      <td class="r">${isNone ? '—' : `<div class="row" style="gap:3px;flex-wrap:nowrap;justify-content:flex-end"><input class="ipt${rs.actualOwn ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:60px;text-align:right" value="${rs.actual ?? ''}" data-ra="${aid}:${i}" title="单组完成量"><small class="hint">${unit}</small></div>`}</td>
+                      <td class="r">${`<div class="row" style="gap:3px;flex-wrap:nowrap;justify-content:flex-end"><input class="ipt${rs.actualOwn ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:60px;text-align:right" value="${rs.actual ?? ''}" data-ra="${aid}:${i}" title="单组完成量"><small class="hint">${unit}</small></div>`}</td>
                       <td class="r">${isKg ? `<input class="ipt" type="number" min="0" max="10" style="width:46px;text-align:right" value="${rs.rir ?? ''}" data-rr="${aid}:${i}" title="RIR">` : '—'}</td>
                       <td class="r"><input class="ipt${rs.setsOwn ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:46px;text-align:right" value="${rs.sets ?? ''}" data-rs="${aid}:${i}" title="组数"></td>
                       <td class="r num" data-est="${aid}:${i}">${estCell}</td>

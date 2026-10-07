@@ -134,12 +134,12 @@ const UI = {
       return html;
     };
 
-    // 行单位：kg 重量行（计吨位）/ BW 自重行（计次数不计吨位）/ m 距离行 / s 时间行 / — 无负荷（只记组数）
+    // 行单位：kg 重量行（计吨位）/ BW 自重行（计次不计吨位）/ m 距离行 / s 时间行 / — 无负荷（计次不计吨位）
     const UNITS = [['kg', 'kg'], ['bw', 'BW'], ['m', 'm'], ['s', 's'], ['none', '—']];
-    const unitCell = (r) => `<select class="sel ex-unit-main" data-f="unit" title="本行负荷单位：kg=外部重量（计吨位，可设%1RM）；BW=自重（计次数，不计吨位）；m=距离；s=时间；—=无负荷（只记组数）">
+    const unitCell = (r) => `<select class="sel ex-unit-main" data-f="unit" title="本行负荷单位：kg=外部重量（计吨位，可设%1RM）；BW=自重（计次不计吨位）；m=距离；s=时间；—=无负荷（计次不计吨位）">
       ${UNITS.map(([u, lbl]) => `<option value="${u}" ${Calc.rowUnit(r) === u ? 'selected' : ''}>${lbl}</option>`).join('')}
     </select>`;
-    // 行内剂量片段：重量/自重行录次/组；距离行录单组距离（统一米）；时间行录单组做功（统一秒）；无负荷行不录量
+    // 行内剂量片段：重量/自重/无负荷行录次/组；距离行录单组距离（统一米）；时间行录单组做功（统一秒）
     const doseCell = (r) => {
       const m = Calc.metricOf(r);
       if (m === 'distance') {
@@ -148,13 +148,11 @@ const UI = {
       if (m === 'duration') {
         return `<input class="ipt" data-f="dur" type="number" min="0" step="any" value="${r.dur ?? ''}">`;
       }
-      if (m === 'none') return '<span class="hint">—</span>';
       return `<input class="ipt" data-f="reps" type="number" min="0" value="${r.reps ?? ''}">`;
     };
-    // 实际完成（课后）：总次数 / 总距离 m / 总做功 s（距离统一米、做功统一秒）；无负荷行不录
+    // 实际完成（课后）：总次数 / 总距离 m / 总做功 s（距离统一米、做功统一秒）；无负荷行同样计次
     const actualCell = (r) => {
       const m = Calc.metricOf(r);
-      if (m === 'none') return '<span class="hint">—</span>';
       const unit = m === 'reps' ? '次' : m === 'distance' ? 'm' : 's';
       return `<input class="ipt" data-f="actual" type="number" min="0" step="any" value="${r.actual ?? ''}" style="width:calc(100% - 30px);min-width:0"><small class="hint" style="width:26px;text-align:right">${unit}</small>`;
     };
@@ -175,12 +173,12 @@ const UI = {
       if (direct) return `${U.fmt(Math.round(direct))} <small>kg</small>`;
       return `<span class="hint" title="kg 行吨位 = 重量 × 组 × 单组次数；为参训运动员设置 1RM（档案页或课后「更新1RM」）后按 %1RM 自动折算">${U.fmt(dose)} <small>次</small><br><span style="font-size:10px">待设1RM</span></span>`;
     };
-    // 本行负荷（课后口径）：kg=吨位；BW=总次数（自重，不计吨位）；距离=总米；时间=总秒（折分钟）；—=无
+    // 本行负荷（课后口径）：kg=吨位；BW=总次数（自重）；—=总次数（无负荷）；距离=总米；时间=总秒（折分钟）
     const loadCell = (r) => {
       const u = Calc.rowUnit(r);
-      if (u === 'none') return '—';
       const m = Calc.metricOf(r);
       const dose = Calc.planRowDose(r);
+      if (u === 'none') return dose ? `${U.fmt(dose)} <small>次</small><br><span class="hint" style="font-size:10px">无负荷</span>` : '<span class="hint">无负荷</span>';
       if (m === 'reps' && u === 'bw') return dose ? `${U.fmt(dose)} <small>次</small><br><span class="hint" style="font-size:10px">自重</span>` : '<span class="hint">自重</span>';
       if (m === 'reps') return kgLoadCell(r);
       if (m === 'distance') {
@@ -189,11 +187,14 @@ const UI = {
       }
       return `${U.fmt(dose)} <small>s</small> · ${U.fmt(Math.round(dose / 6) / 10)} <small>min</small>`;
     };
-    // 计划模式「总负荷」：随单位自动计算——kg 行=吨位（单人/团队 1RM 折算）；BW=总次数；距离行=总米；时间行=总秒；—=无
+    // 计划模式「总负荷」：随单位自动计算——kg 行=吨位（单人/团队 1RM 折算）；BW=总次数（自重）；—=总次数（无负荷）；距离行=总米；时间行=总秒
     const planLoadCell = (r) => {
       const u = Calc.rowUnit(r);
-      if (u === 'none') return '<span class="hint">—</span>';
       const m = Calc.metricOf(r);
+      if (u === 'none') {
+        const dose = Calc.planRowDose(r);
+        return dose ? `${U.fmt(dose)} <small>次</small><br><span class="hint" style="font-size:10px">无负荷</span>` : '<span class="hint">无负荷</span>';
+      }
       if (m === 'reps' && u === 'bw') {
         const dose = Calc.planRowDose(r);
         return dose ? `${U.fmt(dose)} <small>次</small><br><span class="hint" style="font-size:10px">自重</span>` : '<span class="hint">自重</span>';
@@ -230,9 +231,7 @@ const UI = {
         ? `<input class="ipt" data-sd="${idx}" data-sf="dist" type="number" min="0" step="any" value="${d.dist ?? ''}" style="width:70px">`
         : m === 'duration'
           ? `<input class="ipt" data-sd="${idx}" data-sf="dur" type="number" min="0" step="any" value="${d.dur ?? ''}" style="width:70px">`
-          : m === 'none'
-            ? '<span class="hint" style="min-width:70px">—</span>'
-            : `<input class="ipt" data-sd="${idx}" data-sf="reps" type="number" min="0" value="${d.reps ?? ''}" style="width:50px">`;
+          : `<input class="ipt" data-sd="${idx}" data-sf="reps" type="number" min="0" value="${d.reps ?? ''}" style="width:50px">`;
       const pctW = u === 'kg'
         ? `<input class="ipt" data-sd="${idx}" data-sf="pct" type="number" min="0" max="200" placeholder="%" value="${d.pct ?? ''}" style="width:56px" title="该组 %1RM">
            ${pctOnly ? '' : `<input class="ipt" data-sd="${idx}" data-sf="weight" type="number" min="0" step="0.5" placeholder="kg" value="${d.weight ?? ''}" style="width:64px" title="该组重量（留空按 %1RM 折算）">`}`
@@ -248,7 +247,6 @@ const UI = {
         if (m === 'reps') { row.dist = null; row.distUnit = 'm'; row.dur = null; row.durUnit = 's'; }
         if (m === 'distance') { row.reps = null; row.dur = null; row.durUnit = 's'; }
         if (m === 'duration') { row.reps = null; row.dist = null; row.distUnit = 'm'; }
-        if (m === 'none') { row.reps = null; row.dist = null; row.dur = null; row.pct = null; row.weight = null; }
         row.actual = null;
       };
 
@@ -353,7 +351,7 @@ const UI = {
           <button class="btn sm ghost ex-add">＋ 添加动作</button>
           <div class="tot-line" style="padding:0;gap:14px;flex-wrap:wrap">
             ${planMode ? '' : `<span class="hint">${pctOnly ? '计划重量按每人 1RM 内部换算（此处只显示 %1RM）· 实际重量课后按人填写' : `重量按 ${rmContext()} 计算`}</span>`}
-            ${sumBits.length ? sumBits.map((s) => `<span>${s}</span>`).join('') : '<span class="hint">单位可选：kg 重量（计吨位）/ BW 自重（计次）/ m 距离 / s 时间 / — 无负荷（只记组数）；点击 ▸ 可逐组设计热身+正式组</span>'}
+            ${sumBits.length ? sumBits.map((s) => `<span>${s}</span>`).join('') : '<span class="hint">单位可选：kg 重量（计吨位）/ BW 自重（计次）/ m 距离 / s 时间 / — 无负荷（计次不计吨位）；点击 ▸ 可逐组设计热身+正式组</span>'}
           </div>
         </div>`;
 
@@ -523,6 +521,11 @@ const UI = {
             rows[i].unit = unitSel.value;
             const m = Calc.metricOf(rows[i]);
             if (m !== prev) { resetForMetric(rows[i], m); if (Array.isArray(rows[i].setDefs)) rows[i].setDefs = null; }
+            // 离开 kg 单位时清掉 %1RM/重量（含逐组定义），避免残留重量被误计
+            if (rows[i].unit !== 'kg' && (rows[i].pct != null || rows[i].weight != null)) {
+              rows[i].pct = null; rows[i].weight = null;
+              if (Array.isArray(rows[i].setDefs)) rows[i].setDefs.forEach((d) => { d.pct = null; d.weight = null; });
+            }
             render(); onChanged && onChanged();
           };
         }

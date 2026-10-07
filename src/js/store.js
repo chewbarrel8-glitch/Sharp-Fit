@@ -696,9 +696,12 @@ const Store = {
             if (!v) return;
             if (metric === 'reps') {
               out.reps += v;
-              let w = lg.own && lg.w != null ? Number(lg.w) : NaN;
-              if (!w || isNaN(w)) w = Calc.setDefWeight(d0, rm ? rm.value : null) || Number(r.weight) || 0;
-              out.kg += (w || 0) * v;
+              // 仅 kg 重量行计吨位（BW/—行不计）
+              if (Calc.rowUnit(r) === 'kg') {
+                let w = lg.own && lg.w != null ? Number(lg.w) : NaN;
+                if (!w || isNaN(w)) w = Calc.setDefWeight(d0, rm ? rm.value : null) || Number(r.weight) || 0;
+                out.kg += (w || 0) * v;
+              }
             } else if (metric === 'distance') {
               out.m += v;
               out.bands[Calc.setDefSpeedBand(r, d0)] += v;
@@ -714,10 +717,12 @@ const Store = {
         if (!dose) return;
         if (metric === 'reps') {
           out.reps += dose;
-          // 有实际/计划重量才算吨位（自重动作重量=0，自然为 0；任何 kg 行动作只要设置了重量/1RM 都计入）
-          const rm = Store.athRm(id, r.exId);
-          const w = rs.w != null ? rs.w : (rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight);
-          out.kg += (Number(w) || 0) * dose;
+          // 仅 kg 重量行计吨位（自重/无负荷动作重量=0，自然为 0；任何 kg 行动作只要设置了重量/1RM 都计入）
+          if (Calc.rowUnit(r) === 'kg') {
+            const rm = Store.athRm(id, r.exId);
+            const w = rs.w != null ? rs.w : (rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight);
+            out.kg += (Number(w) || 0) * dose;
+          }
         } else if (metric === 'distance') {
           out.m += dose;
           out.bands[Calc.rowSpeedBand(r)] += dose;
@@ -823,12 +828,15 @@ const Store = {
             const dose = Calc.planRowDose(r);
             if (metric === 'reps') {
               out.reps += dose;
-              let w = Number(r.weight) || 0;
-              if (!w && athleteId && r.pct) {
-                const rm = Store.athRm(athleteId, r.exId);
-                w = rm ? Calc.weightFromPct(rm.value, r.pct) : 0;
+              // 仅 kg 重量行计吨位（BW/—行不计）
+              if (Calc.rowUnit(r) === 'kg') {
+                let w = Number(r.weight) || 0;
+                if (!w && athleteId && r.pct) {
+                  const rm = Store.athRm(athleteId, r.exId);
+                  w = rm ? Calc.weightFromPct(rm.value, r.pct) : 0;
+                }
+                out.kg += (w || 0) * dose;
               }
-              out.kg += (w || 0) * dose;
             } else if (metric === 'distance') out.m += dose;
             else if (metric === 'duration') out.s += dose;
           }
@@ -843,10 +851,11 @@ const Store = {
 
 // ---------- 计算引擎 ----------
 const Calc = {
-  // 单行负荷 kg = 重量 × 完成次数（实际缺省 = 组数×每组次数）；仅重量行产生吨位
+  // 单行负荷 kg = 重量 × 完成次数（实际缺省 = 组数×每组次数）；仅 kg 重量行产生吨位（BW/—行即使残留重量也不计）
   // rmValue：计划模式传入运动员 1RM 时，重量缺省按 1RM×%1RM 折算（课后行已直接存 r.weight）
   rowLoad(r, rmValue) {
     if (Calc.metricOf(r) !== 'reps') return 0;
+    if (Calc.rowUnit(r) !== 'kg') return 0;
     // 逐组明细（热身组 + 正式组分别计吨位）：Σ 逐组重量 × 逐组次数
     if (Array.isArray(r.setDefs) && r.setDefs.length) {
       return U.sum(r.setDefs, (d) => (Calc.setDefWeight(d, rmValue) || 0) * (Number(d.reps) || 0));
@@ -867,7 +876,7 @@ const Calc = {
   // 计划行按一批运动员 1RM 折算的团队计划吨位（仅 kg/次行）
   // 每个有 1RM 的运动员：重量 = 行内重量 或 1RM×%1RM；无 1RM 者跳过。返回 {kg, nW 有重量人数, n 总人数}
   planRowTeamLoad(r, athIds) {
-    if (Calc.metricOf(r) !== 'reps') return { kg: 0, nW: 0, n: (athIds || []).length };
+    if (Calc.metricOf(r) !== 'reps' || Calc.rowUnit(r) !== 'kg') return { kg: 0, nW: 0, n: (athIds || []).length };
     // 逐组明细：每名运动员每组按 组重量→其1RM×组%1RM 折算后累加
     const defs = Array.isArray(r.setDefs) && r.setDefs.length ? r.setDefs : null;
     let kg = 0, nW = 0;
@@ -909,7 +918,7 @@ const Calc = {
     });
   },
 
-  // ---------- 五量纲体系：重量行(kg, 次×重量) / 自重行(BW, 只计次不计吨位) / 距离行(m) / 时间行(s) / 无负荷行(—, 只记组数) ----------
+  // ---------- 五量纲体系：重量行(kg, 次×重量) / 自重行(BW, 计次不计吨位) / 距离行(m) / 时间行(s) / 无负荷行(—, 计次不计吨位) ----------
   // 行单位：优先行内显式 unit（教练可在动作表手改），否则按动作库量纲+负荷类型自动判定，旧数据按字段启发式回退
   rowUnit(r) {
     if (r && ['kg', 'm', 's', 'bw', 'none'].includes(r.unit)) return r.unit;
@@ -930,13 +939,12 @@ const Calc = {
     if (ex && ex.loadType === 'bodyweight') return 'bw';
     return 'kg';
   },
-  // 行量纲：kg/BW→reps（次/重量行；BW 自重行只计次数不计吨位），m→distance，s→duration，none→无负荷
+  // 行量纲：kg/BW/—(无负荷)→reps（计次；仅 kg 行计吨位），m→distance，s→duration
   metricOf(r) {
     const u = r && r.unit ? r.unit : null;
-    if (u === 'kg' || u === 'bw') return 'reps';
+    if (u === 'kg' || u === 'bw' || u === 'none') return 'reps';
     if (u === 'm') return 'distance';
     if (u === 's') return 'duration';
-    if (u === 'none') return 'none';
     const ex = r && r.exId ? Store.exercise(r.exId) : null;
     if (ex && ex.metric) return ex.metric === 'reps' && ex.loadType === 'bodyweight' ? 'reps' : ex.metric;
     if (r && r.dist != null && r.dist !== '') return 'distance';
@@ -951,7 +959,7 @@ const Calc = {
     if (r && r.exId) return (r.weight ? 'resistance' : 'bodyweight');
     return 'resistance';   // 未选动作的新行：按抗阻行展示 %1RM/重量列（选择自重/能量系统动作后自动收起）
   },
-  // 单行单组剂量（计划）：次数=reps；距离统一米（distUnit=km 换算）；做功时间统一秒（durUnit=min 换算）；无负荷=0
+  // 单行单组剂量（计划）：次数=reps（kg/BW/—行均计次）；距离统一米（distUnit=km 换算）；做功时间统一秒（durUnit=min 换算）
   rowPerSet(r) {
     const metric = Calc.metricOf(r);
     if (metric === 'distance') {
@@ -962,12 +970,10 @@ const Calc = {
       const d = Number(r.dur) || 0;
       return r.durUnit === 'min' ? d * 60 : d;
     }
-    if (metric === 'none') return 0;
     return Number(r.reps) || 0;
   },
   // 单行计划总剂量：逐组明细 = Σ 各组（热身+正式）单组量；否则 组×单组剂量
   planRowDose(r) {
-    if (Calc.metricOf(r) === 'none') return 0;
     if (Array.isArray(r.setDefs) && r.setDefs.length) return U.sum(r.setDefs, (d) => Calc.setDefDose(r, d));
     return (Number(r.sets) || 0) * Calc.rowPerSet(r);
   },
@@ -975,7 +981,6 @@ const Calc = {
   setDefDose(r, d) {
     d = d || {};
     const metric = Calc.metricOf(r);
-    if (metric === 'none') return 0;
     if (metric === 'distance') {
       const v = Number(d.dist) || 0;
       return d.distUnit === 'km' ? v * 1000 : v;
