@@ -259,7 +259,11 @@ window.addEventListener('error', (e) => errors.push(e.message));
   loadView.querySelector('#modeTeam').click();
   assert(loadView.querySelector('.load-metric-grid .load-metric:first-child .v').textContent.startsWith('14'), '团队模式汇总所有当前计划参训者 AU');
 
-  // 退出示例：载入记录清单，退出时精确移除示例创建的数据
+  // 退出示例：空白库载入 → 退出 → 回到空白库
+  T.Store.data = T.Store.defaultDB();
+  T.Store.data.categories1 = T.Store.seedCategories();
+  T.Store.data.exercises = T.Store.seedExercises();
+  T.Store.data.goals = T.Store.defaultGoals();
   T.seedDemo();
   assert(!!T.Store.data.settings.demo && T.Store.data.settings.demo.athleteIds.length === 15, '载入示例后记录示例清单（15 名运动员）');
   window.exitDemo();
@@ -270,6 +274,19 @@ window.addEventListener('error', (e) => errors.push(e.message));
   assert(Object.keys(dd.athleteRm).length === 0, '退出示例后示例运动员 1RM 清空');
   assert(!dd.exercises.some((e) => e.cat1 === '篮球专项') && !dd.categories1.some((c) => c.name === '篮球专项'), '退出示例后篮球专项动作与分类移除');
   assert(!dd.settings.demo && dd.settings.activeMacroId === null, '退出示例后清除示例标记并复位当前计划');
+
+  // 合并式载入：用户先有自己的计划 → 载入示例不覆盖 → 退出示例后用户数据完整保留并切回
+  dd.macros.push({ id: 'mac_u', name: '用户自建计划', sportCat: '球类·小球', sport: '羽毛球', startDate: '2026-09-01', endDate: '2027-06-30', cycles: [], compDates: [], testDates: [], weekPlan: {}, goalBlocks: [], athletes: [] });
+  dd.mesos.push({ id: 'mes_u', macroId: 'mac_u', name: '用户中周期', type: '积累', startDate: '2026-09-07', endDate: '2026-10-04', goals: { primary: [], secondary: [] }, days: [] });
+  dd.athletes.push({ id: 'ath_u', macroId: 'mac_u', name: '张三', sport: '羽毛球', gender: '男', birth: '2000-01-01', note: '' });
+  dd.settings.activeMacroId = 'mac_u';
+  T.seedDemo();
+  assert(dd.macros.length === 2 && dd.macros.some((m) => m.id === 'mac_u') && dd.settings.activeMacroId === dd.settings.demo.macroId, '载入示例不覆盖用户计划，且切到示例计划');
+  assert(dd.athletes.some((a) => a.id === 'ath_u') && dd.mesos.some((m) => m.id === 'mes_u'), '载入示例保留用户运动员与中周期');
+  assert(T.seedDemo() === false, '示例已载入时重复载入不生效');
+  window.exitDemo();
+  assert(dd.macros.length === 1 && dd.macros[0].id === 'mac_u' && dd.mesos.length === 1 && dd.athletes.length === 1, '退出示例后用户计划/中周期/运动员完整保留');
+  assert(dd.settings.activeMacroId === 'mac_u' && !dd.settings.demo, '退出示例后切回用户载入前的计划');
 
   console.log(errors.length ? '\n== 有失败项 ==' : '\n== 全部通过 ==');
   process.exit(errors.length ? 1 : 0);

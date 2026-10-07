@@ -14,7 +14,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   const ev = (code) => new Promise((r) => { const id = ++msgId; pending[id] = (d) => r(d.result && d.result.result && d.result.result.value !== undefined ? d.result.result.value : JSON.stringify(d.result)); sock.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression: code, awaitPromise: true } })); });
 
   const seed = fs.readFileSync('src/js/demo.js', 'utf8');
-  console.log(await ev(seed + '; window.seedDemo(); Store.save(); "seed-ok"'));
+  console.log(await ev(seed + '; Store.data = Store.defaultDB(); Store.data.categories1 = Store.seedCategories(); Store.data.exercises = Store.seedExercises(); Store.data.goals = Store.defaultGoals(); window.seedDemo(); Store.save(); "seed-ok"'));
   await delay(800);
   console.log(await ev('location.hash="#/profile"; window.dispatchEvent(new Event("hashchange")); "nav"'));
   await delay(800);

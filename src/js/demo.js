@@ -1,11 +1,17 @@
 // 内置示例：XX篮球队备战计划（10 个月 / 2 个大周期 / 15 人 / 每天 1-3 节不同类型训练课 / 5 次×10 项体能测试）
 // 通过侧边栏「载入示例」载入；纯浏览器脚本，依赖全局 Store / U / Calc（与各视图脚本同源加载）
+// 载入策略：合并而非覆盖——用户已创建的计划/运动员/动作等数据全部保留，示例作为一套新增计划并存；
+// 「退出示例」时仅精确移除示例创建的数据，并切回用户载入前正在查看的计划。
 window.seedDemo = function seedDemo() {
-  Store.data = Store.defaultDB();
-  Store.data.categories1 = Store.seedCategories();
-  Store.data.exercises = Store.seedExercises();
-  Store.data.goals = Store.defaultGoals();
+  // 已载入过示例则不重复载入
+  if (Store.data && Store.data.settings && Store.data.settings.demo) return false;
+
   const d = Store.data;
+  // 确保内置库存在（正常初始化后必然存在，此处仅防御异常库）
+  if (!d.categories1 || !d.categories1.length) d.categories1 = Store.seedCategories();
+  if (!d.exercises || !d.exercises.length) d.exercises = Store.seedExercises();
+  if (!d.goals || !d.goals.length) d.goals = Store.defaultGoals();
+  const prevActiveMacroId = d.settings.activeMacroId || null;
 
   // 固定种子伪随机：保证每次载入的示例数据一致
   let rngSeed = 20261006;
@@ -19,13 +25,24 @@ window.seedDemo = function seedDemo() {
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
   // ---------- 篮球专项自定义动作（挂到动作库自定义分类） ----------
-  const c1bb = { id: U.uid('c1'), name: '篮球专项', children: [
-    { id: U.uid('c2'), name: '进攻技术' }, { id: U.uid('c2'), name: '防守与战术' }
-  ] };
-  d.categories1.push(c1bb);
+  // 同名分类/动作不重复创建（防御重复载入）；仅记录本次新建项，退出示例时才移除
+  const demoCreatedExIds = [];
+  let c1bb = d.categories1.find((c) => c.name === '篮球专项');
+  let catCreated = false;
+  if (!c1bb) {
+    c1bb = { id: U.uid('c1'), name: '篮球专项', children: [
+      { id: U.uid('c2'), name: '进攻技术' }, { id: U.uid('c2'), name: '防守与战术' }
+    ] };
+    d.categories1.push(c1bb);
+    catCreated = true;
+  }
   const mkBbEx = (name, c2, metric) => {
-    const ex = { id: U.uid('ex'), cat1: '篮球专项', cat2: c2, name, equip: '自重', metric, loadType: 'bodyweight', notes: '' };
-    d.exercises.push(ex);
+    let ex = d.exercises.find((x) => x.cat1 === '篮球专项' && x.name === name);
+    if (!ex) {
+      ex = { id: U.uid('ex'), cat1: '篮球专项', cat2: c2, name, equip: '自重', metric, loadType: 'bodyweight', notes: '' };
+      d.exercises.push(ex);
+      demoCreatedExIds.push(ex.id);
+    }
     return ex;
   };
   const exShoot = mkBbEx('定点投篮', '进攻技术', 'reps');
@@ -37,9 +54,9 @@ window.seedDemo = function seedDemo() {
   const gid = (name) => { const g = d.goals.find((x) => x.name === name); return g ? g.id : null; };
   const gids = (names) => names.map(gid).filter(Boolean);
 
-  // ---------- 大周期：XX篮球队备战计划 ----------
+  // ---------- 大周期：XX篮球队备战计划（作为新增计划并入，不影响用户已有计划） ----------
   const macroId = U.uid('mac');
-  d.macros.push({
+  const macRef = {
     id: macroId, name: 'XX篮球队备战计划', sportCat: '球类 · 大球', sport: '篮球',
     model: 'block', startDate: '2026-01-05', endDate: '2026-11-01',
     cycles: [
@@ -61,7 +78,8 @@ window.seedDemo = function seedDemo() {
       { date: '2026-07-18', name: '比赛期测试' },
       { date: '2026-09-19', name: '第二峰值期测试' }
     ]
-  });
+  };
+  d.macros.push(macRef);
   d.settings.activeMacroId = macroId;
 
   // ---------- 周期总表：43 周波浪式负荷（3 周加载 + 1 周减量） ----------
@@ -94,20 +112,23 @@ window.seedDemo = function seedDemo() {
     ['M6 · 季后赛冲刺·峰值', '峰值', '2026-09-21', '2026-11-01', [['爆发力'], ['专项技术']]]
   ];
   const mesoIds = [];
+  const mesoRefs = [];
   for (const [name, type, s, e] of mesoDefs) {
     const id = U.uid('mes');
     mesoIds.push(id);
-    d.mesos.push({ id, macroId, name, type, startDate: s, endDate: e, goals: { primary: [], secondary: [] }, days: [] });
+    const m = { id, macroId, name, type, startDate: s, endDate: e, goals: { primary: [], secondary: [] }, days: [] };
+    mesoRefs.push(m);
+    d.mesos.push(m);
   }
-  mesoDefs.forEach(([, , , , goals], i) => {
-    d.mesos[i].goals = { primary: gids(goals[0]), secondary: gids(goals[1]) };
+  mesoRefs.forEach((m, i) => {
+    m.goals = { primary: gids(mesoDefs[i][4][0]), secondary: gids(mesoDefs[i][4][1]) };
   });
   // 总表目标块（每个中周期一块，主/次目标恰好落在两个训练模块分类上）
-  d.macros[0].goalBlocks = mesoDefs.map(([, , s, e, goals], i) => ({
-    id: 'gb' + (i + 1), start: s, end: e,
+  macRef.goalBlocks = mesoDefs.map(([, , s, e, goals], i) => ({
+    id: 'gbdemo' + (i + 1), start: s, end: e,
     primary: gids(goals[0]), secondary: gids(goals[1])
   }));
-  Object.assign(d.macros[0], { weekPlan, teamName: 'XX篮球队' });
+  Object.assign(macRef, { weekPlan, teamName: 'XX篮球队' });
 
   // ---------- 动作行构造 ----------
   const REF_RM = { '颈后深蹲': 110, '传统硬拉': 150, '平板卧推': 85, '高翻': 80, '六角杠硬拉': 130, '借力推': 70, '保加利亚分腿蹲': 55, '罗马尼亚硬拉': 100 };
@@ -153,10 +174,10 @@ window.seedDemo = function seedDemo() {
   const coursesForDate = (date, meso, wk) => {
     const wd = U.d(date).getDay();
     if (wd === 0) return [];
-    if ((d.macros[0].testDates || []).some((t) => t.date === date)) {
+    if ((macRef.testDates || []).some((t) => t.date === date)) {
       return [courseOf('综合体能测试（10项）', '测试', '09:00', testRows()), courseOf('测试后放松恢复', '恢复再生', '16:30', recRows())];
     }
-    if (Store.compOn(date)) {
+    if ((macRef.compDates || []).some((c) => c.date === date)) {
       return [courseOf('赛前投篮训练', '技术', '10:00', techRows()), courseOf('正式比赛', '比赛', '19:30', [])];
     }
     const t = meso.type;
@@ -172,8 +193,8 @@ window.seedDemo = function seedDemo() {
     }
   };
 
-  // 全计划逐日课程（10 个月）
-  for (const meso of d.mesos) {
+  // 全计划逐日课程（10 个月，仅遍历示例自己的中周期）
+  for (const meso of mesoRefs) {
     let cur = meso.startDate, wk = 0;
     while (cur <= meso.endDate) {
       if (U.d(cur).getDay() === 1) wk++;
@@ -187,7 +208,7 @@ window.seedDemo = function seedDemo() {
   const microGoals = mesoDefs.map(([, , , , goals]) => ({ primary: gids(goals[0]), secondary: gids(goals[1]) }));
   const dayTypeByWd = ['休息', '力量', '综合体能', '技术', '力量', '速度', '力量'];
   const dayIntByWd = [15, 80, 74, 55, 78, 82, 70];
-  d.mesos.forEach((meso, mi) => {
+  mesoRefs.forEach((meso, mi) => {
     let cur = meso.startDate, wk = 0;
     while (cur <= meso.endDate) {
       const e = U.addDays(cur, 6);
@@ -223,7 +244,7 @@ window.seedDemo = function seedDemo() {
   ];
   const aths = roster.map(([name, birth, note]) => ({ id: U.uid('ath'), macroId, name, sport: '篮球', gender: '男', birth, note }));
   d.athletes.push(...aths);
-  d.macros[0].athletes = aths.map((a) => a.id);
+  macRef.athletes = aths.map((a) => a.id);
 
   // ---------- 1RM 测试（多负荷测试，构建 RIR-负荷曲线） ----------
   const sq = pick('颈后深蹲'), bp = pick('平板卧推'), dl = pick('传统硬拉');
@@ -313,7 +334,7 @@ window.seedDemo = function seedDemo() {
   // ---------- 近 8 周已完成训练课（每天 1-3 节，含全队 sRPE 与个人负荷） ----------
   const sesStart = U.addDays(U.today(), -56);
   const baseRpe = { '力量': 7, '技术': 5.5, '战术': 6.5, '综合体能': 8, '速度': 8, '敏捷': 7.5, '恢复再生': 3, '测试': 7, '比赛': 9 };
-  for (const meso of d.mesos) {
+  for (const meso of mesoRefs) {
     for (const day of meso.days || []) {
       if (day.date < sesStart || day.date > U.today()) continue;
       for (const course of day.courses || []) {
@@ -352,14 +373,17 @@ window.seedDemo = function seedDemo() {
   d.settings.demo = {
     macroId,
     athleteIds: aths.map((a) => a.id),
-    exerciseIds: [exShoot.id, exDribble.id, exTactic.id, exSlide.id],
-    cat1Id: c1bb.id
+    exerciseIds: demoCreatedExIds,
+    cat1Id: catCreated ? c1bb.id : null,
+    prevActiveMacroId
   };
 
   Store.save();
+  return true;
 };
 
-// 退出示例：仅移除 seedDemo 创建的示例数据（计划/中周期/小周期/训练课/负荷/测试/档案/示例运动员/篮球专项动作），保留用户自建内容
+// 退出示例：仅移除 seedDemo 创建的示例数据（计划/中周期/小周期/训练课/负荷/测试/档案/示例运动员/篮球专项动作），
+// 用户自建的计划与数据完整保留；退出后切回载入示例前正在查看的用户计划
 window.exitDemo = function exitDemo() {
   const dm = Store.data && Store.data.settings && Store.data.settings.demo;
   if (!dm) return;
@@ -376,9 +400,13 @@ window.exitDemo = function exitDemo() {
   d.athletes = d.athletes.filter((a) => !athSet.has(a.id));
   for (const aid of athSet) delete d.athleteRm[aid];
   const exSet = new Set(dm.exerciseIds || []);
-  d.exercises = d.exercises.filter((e) => !exSet.has(e.id));
-  d.categories1 = d.categories1.filter((c) => c.id !== dm.cat1Id);
-  if (d.settings.activeMacroId === dm.macroId) d.settings.activeMacroId = d.macros.length ? d.macros[0].id : null;
+  if (exSet.size) d.exercises = d.exercises.filter((e) => !exSet.has(e.id));
+  if (dm.cat1Id) d.categories1 = d.categories1.filter((c) => c.id !== dm.cat1Id);
+  // 恢复载入前查看的计划；若该计划已不存在，则落到剩余的第一个用户计划
+  const restore = dm.prevActiveMacroId && d.macros.some((m) => m.id === dm.prevActiveMacroId)
+    ? dm.prevActiveMacroId
+    : (d.macros.length ? d.macros[0].id : null);
+  d.settings.activeMacroId = restore;
   delete d.settings.demo;
   Store.save();
 };

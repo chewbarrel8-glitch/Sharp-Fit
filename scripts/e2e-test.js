@@ -113,7 +113,7 @@ async function finalize(code) {
   // 1. 注入应用内置示例夹具（src/js/demo.js：XX篮球队备战计划，与「载入示例」按钮同源）
   const seedSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'demo.js'), 'utf8');
   await evaluate(seedSource + '; window.seedDemo = window.seedDemo; "fixture-ok"');
-  const seedErr = await evaluate(`(() => { try { window.seedDemo(); Store.save(); return 'ok:' + Store.data.athletes.length + ':' + Store.data.macros.length; } catch (e) { return 'ERR: ' + e.message; } })()`);
+  const seedErr = await evaluate(`(() => { try { Store.data = Store.defaultDB(); Store.data.categories1 = Store.seedCategories(); Store.data.exercises = Store.seedExercises(); Store.data.goals = Store.defaultGoals(); window.seedDemo(); Store.save(); return 'ok:' + Store.data.athletes.length + ':' + Store.data.macros.length; } catch (e) { return 'ERR: ' + e.message; } })()`);
   assert(/^ok:15:1$/.test(String(seedErr)), `seedDemo 夹具造数成功 (实际 ${seedErr})`);
   await sleep(300);   // 确保 Store.save() 同步写入完成后页面状态稳定
   await evaluate('location.hash = "#/macro"; "ok"');
