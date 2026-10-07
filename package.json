@@ -52,6 +52,34 @@
     "dmg": {
       "title": "Sharp Fit",
       "artifactName": "Sharp Fit-${version}-${arch}.dmg"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon_1024.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "Sharp-Fit-${version}-Windows-x64-setup.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon_1024.png",
+      "category": "Sports",
+      "artifactName": "Sharp-Fit-${version}-Linux-${arch}.${ext}",
+      "maintainer": "Coach"
     }
   }
 }
