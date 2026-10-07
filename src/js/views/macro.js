@@ -1447,7 +1447,7 @@ Views.macro = (() => {
     UI.disposeCharts();
     const mac = Store.activeMacro();
     v.innerHTML = `
-      <div class="card" id="macToolbarWrap" style="padding:16px 18px"><div id="macToolbar"></div>
+      <div class="card" id="macToolbarWrap" style="padding:16px 18px;position:relative;z-index:30"><div id="macToolbar"></div>
         ${!mac ? `<div class="empty" style="margin-top:14px"><h4>开始你的第一个训练计划</h4><p>选择运动项目与起止日期，构建整个赛季的训练蓝图</p><button class="btn primary" id="btnNewMacro">＋ 新建训练计划</button></div>` : ''}
       </div>
       ${mac ? `
