@@ -92,26 +92,45 @@ const UI = {
     // 有效 1RM 值：优先运动员专属
     const effRm = (exId) => { const r = Store.athRm(athleteId, exId); return r ? r.value : null; };
 
-    const optGroups = () => {
-      // 按一级/二级分组生成下拉
+    // 两级联动：先选分类（一级·二级），再从该分类下选动作
+    const encCat = (c1, c2) => c1 + '::' + c2;
+    const byCat = () => {
       const byC1 = {};
       for (const ex of Store.data.exercises) {
         byC1[ex.cat1] = byC1[ex.cat1] || {};
         byC1[ex.cat1][ex.cat2] = byC1[ex.cat1][ex.cat2] || [];
         byC1[ex.cat1][ex.cat2].push(ex);
       }
-      let html = '<option value="">— 选择动作 —</option>';
+      return byC1;
+    };
+    // 分类下拉：全部分类 + 按一级分组列二级
+    const catOptions = () => {
+      const byC1 = byCat();
+      let html = '<option value="">全部分类</option>';
       for (const c1 of Object.keys(byC1).sort()) {
-        for (const c2 of Object.keys(byC1[c1])) {
-          html += `<optgroup label="${U.esc(c1)} · ${U.esc(c2)}">`;
-          for (const ex of byC1[c1][c2]) {
-            // 动作名前直接带分类路径，下拉列表中无需看分组标题也能快速定位
-            const noRm = athleteId && Calc.autoUnitOf(ex) === 'kg' && !effRm(ex.id) ? '（未设1RM）' : '';
-            html += `<option value="${ex.id}">${U.esc(c1)} · ${U.esc(c2)} · ${U.esc(ex.name)}${noRm}</option>`;
-          }
-          html += '</optgroup>';
-        }
+        html += `<optgroup label="${U.esc(c1)}">`;
+        for (const c2 of Object.keys(byC1[c1])) html += `<option value="${encCat(c1, c2)}">${U.esc(c2)}</option>`;
+        html += '</optgroup>';
       }
+      return html;
+    };
+    // 动作下拉：传分类则只列该分类动作；不传（全部分类）按「一级 · 二级」分组
+    const noRmTag = (ex) => athleteId && Calc.autoUnitOf(ex) === 'kg' && !effRm(ex.id) ? '（未设1RM）' : '';
+    const exOptions = (c1, c2) => {
+      let html = '<option value="">— 选择动作 —</option>';
+      if (!c1) {
+        const byC1 = byCat();
+        for (const a of Object.keys(byC1).sort()) {
+          for (const b of Object.keys(byC1[a])) {
+            html += `<optgroup label="${U.esc(a)} · ${U.esc(b)}">`;
+            for (const ex of byC1[a][b]) html += `<option value="${ex.id}">${U.esc(ex.name)}${noRmTag(ex)}</option>`;
+            html += '</optgroup>';
+          }
+        }
+        return html;
+      }
+      const list = (byCat()[c1] || {})[c2] || [];
+      for (const ex of list) html += `<option value="${ex.id}">${U.esc(ex.name)}${noRmTag(ex)}</option>`;
       return html;
     };
 
@@ -276,7 +295,10 @@ const UI = {
         body += `
           <tr data-i="${i}" class="${r.blkId ? 'in-blk' : ''}">
             ${pick}
-            <td><div class="row" style="gap:4px;align-items:center">${blkBadge}<select class="sel ex-sel" data-f="exId" style="flex:1;min-width:0">${optGroups()}</select>
+            <td><div class="row" style="gap:4px;align-items:center">${blkBadge}<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+              <select class="sel ex-cat-sel" title="第一步：选动作分类（全部分类=列出所有动作）" style="font-size:11px;padding:2px 6px">${catOptions()}</select>
+              <select class="sel ex-sel" data-f="exId" style="min-width:0">${exOptions(ex ? ex.cat1 : null, ex ? ex.cat2 : null)}</select>
+            </div>
               ${setEditor ? `<button class="btn sm ghost ex-expand" data-ex="${i}" title="逐组展开/收起（热身组+正式组，负荷全部计入）">${isExpanded ? '▾' : '▸'}</button>` : ''}</div></td>
             ${coreCells}
             <td><button class="btn danger sm ex-del" title="删除">✕</button></td>
@@ -335,21 +357,37 @@ const UI = {
           </div>
         </div>`;
 
-      // 回填选中 + 绑定事件
-      $$('.ex-sel', wrap).forEach((sel, i) => {
-        sel.value = rows[i].exId || '';
-        sel.onchange = () => {
-          rows[i].exId = sel.value || null;
-          const ex = rows[i].exId ? Store.exercise(rows[i].exId) : null;
-          rows[i].unit = Calc.autoUnitOf(ex);
-          resetForMetric(rows[i], Calc.metricOf(rows[i]));
-          if (planMode && defaultPct != null && Calc.metricOf(rows[i]) === 'reps' && (rows[i].pct == null || rows[i].pct === '')) rows[i].pct = defaultPct;
-          if (!planMode && Calc.metricOf(rows[i]) === 'reps') {
-            const rm = rows[i].exId ? effRm(rows[i].exId) : null;
-            if (rm && rows[i].pct) rows[i].weight = Calc.weightFromPct(rm, rows[i].pct);
-          }
-          render(); onChanged && onChanged();
-        };
+      // 回填选中 + 绑定事件（分类 → 动作 两级联动，逐行绑定）
+      $$('.tbl tbody tr[data-i]', wrap).forEach((tr) => {
+        const i = Number(tr.dataset.i);
+        const catSel = tr.querySelector('.ex-cat-sel');
+        const sel = tr.querySelector('.ex-sel');
+        if (catSel) {
+          const ex0 = rows[i].exId ? Store.exercise(rows[i].exId) : null;
+          catSel.value = ex0 ? encCat(ex0.cat1, ex0.cat2) : '';
+          catSel.onchange = () => {
+            const [c1, c2] = catSel.value ? catSel.value.split('::') : [null, null];
+            sel.innerHTML = exOptions(c1, c2);
+            // 当前动作仍属新分类则保留选中；否则回到占位（动作数据不变，另选后才切换）
+            const exCur = rows[i].exId ? Store.exercise(rows[i].exId) : null;
+            sel.value = exCur && (!c1 || (exCur.cat1 === c1 && exCur.cat2 === c2)) ? rows[i].exId : '';
+          };
+        }
+        if (sel) {
+          sel.value = rows[i].exId || '';
+          sel.onchange = () => {
+            rows[i].exId = sel.value || null;
+            const ex = rows[i].exId ? Store.exercise(rows[i].exId) : null;
+            rows[i].unit = Calc.autoUnitOf(ex);
+            resetForMetric(rows[i], Calc.metricOf(rows[i]));
+            if (planMode && defaultPct != null && Calc.metricOf(rows[i]) === 'reps' && (rows[i].pct == null || rows[i].pct === '')) rows[i].pct = defaultPct;
+            if (!planMode && Calc.metricOf(rows[i]) === 'reps') {
+              const rm = rows[i].exId ? effRm(rows[i].exId) : null;
+              if (rm && rows[i].pct) rows[i].weight = Calc.weightFromPct(rm, rows[i].pct);
+            }
+            render(); onChanged && onChanged();
+          };
+        }
       });
       $$('.ex-del', wrap).forEach((btn, i) => { btn.onclick = () => {
         const r = rows[i];
