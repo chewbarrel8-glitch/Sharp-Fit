@@ -9,19 +9,13 @@
     { id: 'load', no: '05', label: '负荷管理', sub: 'ACWR 仪表盘 · 个人/团队负荷看板' },
     { id: 'exercises', no: '06', label: '动作库', sub: '两级分类 · 动作管理' },
     { id: 'profile', no: '07', label: '运动员档案', sub: '基本信息 · 统一体能数据源 · 1RM' },
-    { id: 'kpi', no: '08', label: 'KPI 分析', sub: 'KPI 看板 · 雷达 · FMS · 时期对比 · 团队排名' }
+    { id: 'kpi', no: '08', label: 'KPI 分析', sub: 'KPI 看板 · 雷达 · FMS · 时期对比 · 团队排名' },
+    { id: 'settings', no: '09', label: '设置', sub: '外观背景 · 数据备份 · 使用手册 · 项目库 · 关于' }
   ];
 
   function currentRoute() {
     const h = location.hash.replace('#/', '');
     return NAV.find((n) => n.id === h) ? h : 'macro';
-  }
-
-  // 侧栏示例按钮：无示例时显示「载入示例」；示例载入后变为「退出示例」
-  const demoActive = () => !!(Store.data.settings.demo && Store.data.macros.some((m) => m.id === Store.data.settings.demo.macroId));
-  function syncDemoBtn() {
-    const b = document.getElementById('loadDemo');
-    if (b) b.textContent = demoActive() ? '退出示例' : '载入示例';
   }
 
   function render() {
@@ -34,6 +28,8 @@
       el.classList.toggle('active', active);
       el.setAttribute('aria-current', active ? 'page' : 'false');
     });
+    const gear = document.getElementById('navSettings');
+    if (gear) gear.classList.toggle('on', route === 'settings');
     UI.disposeCharts();
     const view = $('#view');
     view.setAttribute('aria-busy', 'true');
@@ -41,17 +37,39 @@
     view.setAttribute('aria-busy', 'false');
     view.classList.remove('view-ready');
     requestAnimationFrame(() => view.classList.add('view-ready'));
-    syncDemoBtn();
+    if (window.I18n) I18n.apply(view);   // 视图内动态文案随当前语言切换
+    // 记住最近访问的页面（设置中选「启动页=上次页面」时使用）；仅在变化时落盘，避免频繁写库
+    if (Store.data.settings.homeRoute === 'last' && Store.data.settings.lastRoute !== route) {
+      Store.data.settings.lastRoute = route;
+      Store.save();
+    }
   }
 
   function buildNav() {
-    $('#nav').innerHTML = NAV.map((n) => `
+    // 设置入口固定在侧栏左下角（齿轮图标 #navSettings），主导航列表不再重复渲染
+    $('#nav').innerHTML = NAV.filter((n) => n.id !== 'settings').map((n) => `
       <button type="button" class="nav-item" data-id="${n.id}" aria-label="${n.label}">
         <span class="no">${n.no}</span><span class="lbl">${n.label}</span>
       </button>`).join('');
     $$('.nav-item').forEach((el) => { el.onclick = () => { location.hash = '#/' + el.dataset.id; }; });
+    const gear = document.getElementById('navSettings');
+    if (gear) {
+      gear.onclick = () => { location.hash = '#/settings'; };
+      // 齿轮文案还原为原始简体（齿轮在 index.html 中是静态节点，无刷新切换语言时需随导航一起重建原文再翻译）
+      gear.title = '设置';
+      const gt = gear.querySelector('.side-gear-t');
+      if (gt) gt.textContent = '设置';
+    }
     window.addEventListener('hashchange', render);
   }
+
+  // 无刷新切换语言：重渲染导航与当前视图（模板输出原始简体），再按新语言整体翻译。
+  // 视图重挂载会重建图表 canvas，图表内文字随新语言重绘；不 reload，保留页面状态与滚动位置
+  document.addEventListener('i18n:changed', () => {
+    buildNav();
+    render();
+    if (window.I18n) I18n.apply(document.body);
+  });
 
   function bindGlobal() {
     // 下拉菜单切换仅局部刷新数据：保持 #view 滚动位置，避免页面跳回顶部
@@ -66,44 +84,18 @@
 
   window.addEventListener('DOMContentLoaded', async () => {
     await Store.init();
+    // 语言必须在首次渲染前生效（侧栏/顶栏/视图统一翻译）
+    if (window.I18n) I18n.init(Store.data.settings.locale || 'zh-CN');
+    // 应用外观设置（背景模式/强调色/密度），需在首次渲染前生效
+    Views.settings.applyAppearance();
     buildNav();
     bindGlobal();
-    // 左下角「联系开发者」：弹出二维码图片，用于添加开发者好友
-    const devBtn = document.getElementById('contactDev');
-    if (devBtn) devBtn.onclick = () => {
-      UI.modal({
-        title: '联系开发者',
-        body: `<div style="text-align:center"><img src="assets/developer-qr.jpg" alt="开发者二维码" style="max-width:100%;max-height:60vh;border-radius:10px;box-shadow:0 6px 24px color-mix(in oklch, var(--color-background) 18%, transparent)"><p style="margin:14px 0 0;color:var(--dim);font-size:13px">长按或扫码添加开发者好友</p></div>`,
-        footer: `<button class="btn primary" data-x>关闭</button>`
-      });
-    };
-    // 左下角示例按钮：载入内置示例「XX篮球队备战计划」；示例存在时变为「退出示例」
-    const demoBtn = document.getElementById('loadDemo');
-    if (demoBtn) demoBtn.onclick = () => {
-      if (demoActive()) {
-        UI.confirm('将退出并清除内置示例「XX篮球队备战计划」（计划、训练课、负荷、测试与示例运动员数据）。<br>你在示例之外自行添加的数据会保留。是否继续？', () => {
-          try {
-            window.exitDemo();
-            UI.toast('已退出示例', 'ok');
-            location.hash = '#/macro';
-            render();
-          } catch (err) {
-            UI.toast('退出示例失败：' + err.message, 'err');
-          }
-        });
-        return;
-      }
-      UI.confirm('将载入内置示例「XX篮球队备战计划」（10 个月、2 个大周期、15 名运动员，含训练课、体能测试与负荷数据）。<br><strong>不会覆盖你已创建的计划与数据</strong>，示例将作为一套新计划并存，可随时「退出示例」移除。是否继续？', () => {
-        try {
-          window.seedDemo();
-          UI.toast('示例已载入：XX篮球队备战计划', 'ok');
-          location.hash = '#/macro';
-          render();
-        } catch (err) {
-          UI.toast('示例载入失败：' + err.message, 'err');
-        }
-      });
-    };
+    if (window.I18n) I18n.apply(document.body);
+    // 启动页：周期总表（默认）或上次离开时的页面
+    const s = Store.data.settings;
+    if (s.homeRoute === 'last' && s.lastRoute && NAV.some((n) => n.id === s.lastRoute)) {
+      if ((location.hash || '').replace('#/', '') !== s.lastRoute) location.hash = '#/' + s.lastRoute;
+    }
     render();
   });
 })();

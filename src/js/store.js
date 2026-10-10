@@ -23,7 +23,8 @@ const Store = {
       tests: [],                    // {id, athleteId, exerciseId, weight, reps, rir, estimated1RM, date, source, note}
       profiles: [],                 // {id, athleteId, date, height, weight, bodyFat, verticalJump, sprint20m, broadJump, laneAgility, pullUpReps, reactionTime, cmjHeight, imtpPeak, ybtLeft, ybtRight, asymm, fms:{squat,hurdle,lunge,shoulder,aslr,tspu,rotary}, fmsAsymm:[key], note}
       goals: [],                    // 训练目标库 {id, name, cat, hue}；大/中/小周期以 goals:{primary:[id],secondary:[id]} 引用
-      goalCats: []                  // 用户自定义目标分类 [{id, name, hue}]；内置 9 大类从 goals 提取，自定义分类独立存储（允许空分类显示一行）
+      goalCats: [],                 // 用户自定义目标分类 [{id, name, hue}]；内置 9 大类从 goals 提取，自定义分类独立存储（允许空分类显示一行）
+      importBatches: []             // Excel 测试数据导入批次台账（整批撤销用）[{id,ts,fileName,changes:[...]}]
     };
   },
 
@@ -418,7 +419,34 @@ const Store = {
       for (const s of Store.data.sessions || []) stampRows(s.rows);
       Store.data.settings.rowRidV1 = true;
     }
-    Store.persist();
+    // 一次性迁移：为早期内置示例（seed 未写 position）的队员按 seed 名单补标准位置
+    if (!Store.data.settings.seedPosV1) {
+      const posMap = window.SEED_DEMO_POS || null;
+      if (posMap) {
+        for (const a of Store.data.athletes || []) {
+          if (!a.position && posMap[a.name]) a.position = posMap[a.name];
+        }
+        Store.data.settings.seedPosV1 = true;
+      }
+    }
+    // 孤儿运动员治愈：macroId 指向已删除计划（如退出示例后遗留的导入运动员）时，归入当前活动计划
+    // 否则档案页/KPI 页按计划筛选名单时这些人不可见，但重新导入又会按姓名误匹配到他们
+    {
+      const macIds = new Set((Store.data.macros || []).map((m) => m.id));
+      const active = Store.data.settings.activeMacroId;
+      const target = macIds.has(active) ? active : (macIds.size ? [...macIds][0] : null);
+      if (target) {
+        for (const a of Store.data.athletes || []) {
+          if (a.macroId && !macIds.has(a.macroId)) a.macroId = target;
+          else if (!a.macroId) a.macroId = target;
+        }
+      }
+    }
+    await Store.persist();
+    // 自动备份（设置页开关）：启动时每天一份落到 userData/backups，主进程负责去重与保留份数
+    if (window.api && window.api.backupDB && Store.data.settings.autoBackup) {
+      window.api.backupDB().catch((e) => console.warn('auto backup failed', e));
+    }
   },
 
   async persist() {
@@ -438,6 +466,180 @@ const Store = {
     Store.rev++;
     Store._subs.forEach((fn) => { try { fn(); } catch (e) { /* 单个订阅者异常不阻断其余通知 */ } });
     return result;
+  },
+
+  // 恢复备份：以备份文件内容整体替换内存库并落盘；调用方随后应 location.reload()，由 init() 重跑种子与迁移
+  replaceAll(raw) {
+    Store.data = Object.assign(Store.defaultDB(), raw || {});
+    return Store.save();
+  },
+
+  // 清空全部数据（危险区）：回到空白出厂库；同样由调用方 reload
+  resetAll() {
+    Store.data = Store.defaultDB();
+    return Store.save();
+  },
+
+  // ---------- 计划数据包（跨设备迁移）：导出当前计划的全部相关内容，导入后直接展示 ----------
+  exportPlan(macroId) {
+    const d = Store.data;
+    const mac = (d.macros || []).find((m) => m.id === macroId);
+    if (!mac) return null;
+    const aths = (d.athletes || []).filter((a) => a.macroId === macroId);
+    const athIds = new Set(aths.map((a) => a.id));
+    const mesos = (d.mesos || []).filter((m) => m.macroId === macroId);
+    const mesoIds = new Set(mesos.map((m) => m.id));
+    const sessions = (d.sessions || []).filter((s) => (s.athletes || []).some((id) => athIds.has(id)));
+    const sesIds = new Set(sessions.map((s) => s.id));
+    return {
+      type: 'sharpfit-plan-pack', version: 1, exportedAt: new Date().toISOString(),
+      macros: [mac], mesos,
+      micros: (d.micros || []).filter((m) => mesoIds.has(m.mesoId)),
+      sessions,
+      athletes: aths,
+      profiles: (d.profiles || []).filter((p) => athIds.has(p.athleteId)),
+      tests: (d.tests || []).filter((t) => athIds.has(t.athleteId)),
+      loadEntries: (d.loadEntries || []).filter((l) => athIds.has(l.athleteId) && (!l.sessionId || sesIds.has(l.sessionId))),
+      athleteRm: Object.fromEntries(Object.entries(d.athleteRm || {}).filter(([aid]) => athIds.has(aid))),
+      // 全局共享库一并带上（动作/目标/项目库），保证在空白设备上导入后课表与分析完整可用
+      library: {
+        exercises: d.exercises || [],
+        categories1: d.categories1 || [],
+        customSports: d.customSports || {},
+        goals: d.goals || [],
+        goalCats: d.goalCats || [],
+        testItems: (d.settings && d.settings.testItems) || []
+      }
+    };
+  },
+
+  // 导入计划数据包：先解析校验（返回包内容供确认弹窗预览），apply() 才真正落库。
+  // 计划/周期/训练课/运动员等一律生成新 id 作为独立计划追加，不覆盖本机任何数据；
+  // 共享库（动作/分类/目标/项目库）按 id 或名称去重合并，引用自动重映射。
+  importPlan(text) {
+    let pack = null;
+    try { pack = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return { ok: false, msg: '文件不是有效的 JSON' }; }
+    if (!pack || pack.type !== 'sharpfit-plan-pack' || !Array.isArray(pack.macros) || !pack.macros.length) {
+      return { ok: false, msg: '文件内容不是 Sharp Fit 计划数据包' };
+    }
+    const name = pack.macros[0].name || '未命名计划';
+    return {
+      ok: true, name, pack,
+      apply() {
+        const d = Store.data;
+        const lib = pack.library || {};
+        const maps = {};                                  // 'kind:oldId' → newId
+        const nid = (kind, old) => { const k = kind + ':' + old; if (!maps[k]) maps[k] = U.uid(kind); return maps[k]; };
+        // ---- 分类库合并 ----
+        (lib.categories1 || []).forEach((c1) => {
+          let hit = d.categories1.find((x) => x.id === c1.id) || d.categories1.find((x) => x.name === c1.name);
+          if (!hit) { hit = { id: U.uid('c1'), name: c1.name, children: [] }; d.categories1.push(hit); }
+          maps['c1:' + c1.id] = hit.id;
+          (c1.children || []).forEach((c2) => {
+            let h2 = hit.children.find((x) => x.id === c2.id) || hit.children.find((x) => x.name === c2.name);
+            if (!h2) { h2 = { id: U.uid('c2'), name: c2.name }; hit.children.push(h2); }
+            maps['c2:' + c2.id] = h2.id;
+          });
+        });
+        // ---- 动作库合并（同名视为同一动作） ----
+        (lib.exercises || []).forEach((ex) => {
+          const hit = d.exercises.find((x) => x.id === ex.id) || d.exercises.find((x) => x.name === ex.name);
+          if (hit) { maps['ex:' + ex.id] = hit.id; return; }
+          const id = U.uid('ex');
+          maps['ex:' + ex.id] = id;
+          d.exercises.push(Object.assign({}, ex, { id, cat1: maps['c1:' + ex.cat1] || ex.cat1, cat2: maps['c2:' + ex.cat2] || ex.cat2 }));
+        });
+        // ---- 训练目标库合并 ----
+        (lib.goals || []).forEach((g) => {
+          const hit = d.goals.find((x) => x.id === g.id) || d.goals.find((x) => x.name === g.name);
+          if (hit) { maps['g:' + g.id] = hit.id; return; }
+          const id = U.uid('g');
+          maps['g:' + g.id] = id;
+          d.goals.push(Object.assign({}, g, { id }));
+        });
+        (lib.goalCats || []).forEach((c) => {
+          if (d.goalCats.some((x) => x.id === c.id || x.name === c.name)) return;
+          d.goalCats.push(Object.assign({}, c, { id: U.uid('gc') }));
+        });
+        // ---- 运动项目自定义 ----
+        Object.entries(lib.customSports || {}).forEach(([cat, arr]) => {
+          const cur = d.customSports[cat] = d.customSports[cat] || [];
+          (arr || []).forEach((s) => { if (!cur.includes(s)) cur.push(s); });
+        });
+        // ---- 测试项目库合并（同名保留本机定义） ----
+        const items = d.settings.testItems || (d.settings.testItems = []);
+        (lib.testItems || []).forEach((t) => { if (t && t.name && !items.some((x) => x.name === t.name)) items.push(t); });
+        // ---- 业务数据：全部换新 id 追加 ----
+        const mapExDeep = (node) => {
+          if (Array.isArray(node)) { node.forEach(mapExDeep); return; }
+          if (node && typeof node === 'object') Object.keys(node).forEach((k) => {
+            if (k === 'exId' && typeof node[k] === 'string') node[k] = maps['ex:' + node[k]] || node[k];
+            else mapExDeep(node[k]);
+          });
+        };
+        const mapGoals = (g) => g ? { primary: (g.primary || []).map((id) => maps['g:' + id] || id), secondary: (g.secondary || []).map((id) => maps['g:' + id] || id) } : g;
+        const clone = (o) => JSON.parse(JSON.stringify(o));
+        const athNew = {};                                // 旧运动员 id → 新 id
+        (pack.athletes || []).forEach((a) => { athNew[a.id] = nid('ath', a.id); });
+        const mapAthKeys = (obj) => Object.fromEntries(Object.entries(obj || {}).filter(([aid]) => athNew[aid]).map(([aid, v]) => [athNew[aid], v]));
+        let macroNewId = null;
+        (pack.macros || []).forEach((m) => {
+          const nm = clone(m);
+          nm.id = nid('mac', m.id); macroNewId = nm.id;
+          nm.goals = mapGoals(m.goals);
+          mapExDeep(nm);
+          d.macros.push(nm);
+        });
+        (pack.mesos || []).forEach((m) => {
+          const nm = clone(m);
+          nm.id = nid('meso', m.id); nm.macroId = maps['mac:' + m.macroId] || macroNewId;
+          nm.goals = mapGoals(m.goals);
+          mapExDeep(nm);
+          d.mesos.push(nm);
+        });
+        (pack.micros || []).forEach((m) => {
+          const nm = clone(m);
+          nm.id = nid('micro', m.id); nm.mesoId = maps['meso:' + m.mesoId] || m.mesoId;
+          nm.goals = mapGoals(m.goals);
+          d.micros.push(nm);
+        });
+        (pack.sessions || []).forEach((s) => {
+          const ns = clone(s);
+          ns.id = nid('ses', s.id);
+          ns.athletes = (s.athletes || []).filter((aid) => athNew[aid]).map((aid) => athNew[aid]);
+          ns.athSrpe = mapAthKeys(s.athSrpe);
+          ns.results = mapAthKeys(s.results);
+          mapExDeep(ns);
+          d.sessions.push(ns);
+        });
+        (pack.athletes || []).forEach((a) => {
+          const na = clone(a);
+          na.id = athNew[a.id]; na.macroId = macroNewId;
+          d.athletes.push(na);
+        });
+        (pack.profiles || []).forEach((p) => { const np = clone(p); np.id = nid('pro', p.id); np.athleteId = athNew[p.athleteId]; d.profiles.push(np); });
+        (pack.tests || []).forEach((t) => {
+          if (!athNew[t.athleteId]) return;
+          const nt = clone(t); nt.id = nid('tst', t.id); nt.athleteId = athNew[t.athleteId];
+          nt.exerciseId = maps['ex:' + t.exerciseId] || t.exerciseId;
+          d.tests.push(nt);
+        });
+        (pack.loadEntries || []).forEach((l) => {
+          if (!athNew[l.athleteId]) return;
+          const nl = clone(l); nl.id = nid('load', l.id); nl.athleteId = athNew[l.athleteId];
+          nl.sessionId = maps['ses:' + l.sessionId] || null;
+          d.loadEntries.push(nl);
+        });
+        Object.entries(pack.athleteRm || {}).forEach(([aid, rec]) => {
+          if (!athNew[aid]) return;
+          const tgt = d.athleteRm[athNew[aid]] = d.athleteRm[athNew[aid]] || {};
+          Object.entries(rec || {}).forEach(([exId, r]) => { tgt[maps['ex:' + exId] || exId] = r; });
+        });
+        d.settings.activeMacroId = macroNewId;            // 导入后直接展示该计划
+        Store.save();
+        return { ok: true, name, macroId: macroNewId };
+      }
+    };
   },
 
   // ---------- 查询 ----------

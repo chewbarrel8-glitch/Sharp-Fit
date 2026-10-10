@@ -1023,7 +1023,6 @@ Views.load = (() => {
         <option value="table" ${state.weekView === 'table' ? 'selected' : ''}>数据表格</option>
       </select>`;
       const headHtml = `<div class="card-title"><h3>周负荷分析${qTip('总负荷=所选时段（随上方周期筛选联动）每日负荷合计 AU；课次=该时段参训训练课节数；训练天数=有负荷记录的天数；日均=总负荷÷天数；单调性=日均÷标准差（>2 提示负荷过于单一）；应变=总负荷×单调性；ACWR=时段末急慢性负荷比（7 天 EWMA ÷ 42 天 EWMA）', refTxt('foster98', 'hulin14', 'gabbett16'))}</h3><span class="sub">${U.md(wStart)} — ${U.md(wEnd)}</span>${viewSel}</div>`;
-      const hintHtml = `<p class="hint" style="margin-top:10px;line-height:1.8">单调性 >2 提示负荷过于单一（缺乏变化）；ACWR 0.8–1.3 为合理区间，>1.5 风险升高。（单调性/应变：Foster C, et al. Med Sci Sports Exerc, 1998；ACWR 区间：Gabbett TJ, Br J Sports Med, 2016）</p>`;
       if (weekChart) { weekChart.dispose(); weekChart = null; }
       if (state.weekView === 'table') {
         const spanDays = (r) => Math.max(1, Math.round((new Date(r.we) - new Date(r.ws)) / 86400000) + 1);
@@ -1040,10 +1039,9 @@ Views.load = (() => {
             <td class="r num">${r.mono ? r.mono.toFixed(2) + (r.mono > 2 ? ' <span class="chip red">过高</span>' : '') : '—'}</td>
             <td class="r num">${r.strain != null ? U.fmt(r.strain) : '—'}</td>`}
             <td class="r num">${r.acwr != null ? acwrInfo(r.acwr).label : '—'}</td></tr>`).join('')}
-          </tbody></table></div>
-        ${hintHtml}`;
+          </tbody></table></div>`;
       } else {
-        el.innerHTML = `${headHtml}<div class="chart" id="chWeek" style="height:300px"></div>${hintHtml}`;
+        el.innerHTML = `${headHtml}<div class="chart" id="chWeek" style="height:300px"></div>`;
         weekChart = UI.chart(el.querySelector('#chWeek'));
         // 悬停提示：覆盖全部指标（负荷/课次/天数/日均/单调性/应变/ACWR）
         const tipFmt = (ps) => {

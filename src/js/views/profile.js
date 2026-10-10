@@ -18,6 +18,10 @@ Views.profile = (() => {
   // ---------- 添加/编辑运动员（归属当前训练计划：无需选项目/周期，自动绑定） ----------
   function athleteDialog(ath) {
     const mac = curMacro();
+    // 团队球类项目：位置使用下拉枚举（+自定义兜底）；个人项目不显示位置字段
+    const positions = mac ? Sports.positionsOf(mac.sport) : null;
+    const curPos = (ath && ath.position) || '';
+    const posCustom = positions && curPos && !positions.includes(curPos) ? curPos : '';
     UI.modal({
       title: ath ? '编辑运动员' : '添加运动员',
       body: `
@@ -39,10 +43,23 @@ Views.profile = (() => {
           <div class="field full"><label>姓名 *</label><input class="ipt" id="fName" value="${U.esc(ath ? ath.name : '')}" placeholder="请输入姓名"></div>
           <div class="field"><label>性别</label><select class="sel" id="fGender"><option ${ath && ath.gender === '男' ? 'selected' : ''}>男</option><option ${ath && ath.gender === '女' ? 'selected' : ''}>女</option></select></div>
           <div class="field"><label>出生日期</label><input type="date" class="ipt" id="fBirth" value="${ath && ath.birth ? ath.birth : ''}"></div>
+          ${positions ? `
+          <div class="field"><label>位置</label>
+            <select class="sel" id="fPos">
+              <option value="">— 请选择 —</option>
+              ${positions.map((p) => `<option ${curPos === p && !posCustom ? 'selected' : ''}>${U.esc(p)}</option>`).join('')}
+              <option value="__custom__" ${posCustom ? 'selected' : ''}>自定义…</option>
+            </select>
+          </div>
+          <div class="field" id="fPosCustomWrap" style="${posCustom ? '' : 'display:none'}"><label>自定义位置</label><input class="ipt" id="fPosCustom" value="${U.esc(posCustom)}" placeholder="如：第六人 / 双能卫"></div>` : ''}
           <div class="field full"><label>备注</label><input class="ipt" id="fNote" value="${U.esc(ath ? ath.note : '')}"></div>
         </div>`,
       footer: `<button class="btn ghost" data-x>取消</button><button class="btn primary" data-ok>保存</button>`,
       onMount(ov, close) {
+        // 团队项目：「自定义…」位置展开自由输入框
+        const posSel = ov.querySelector('#fPos');
+        const posWrap = ov.querySelector('#fPosCustomWrap');
+        if (posSel) posSel.onchange = () => { posWrap.style.display = posSel.value === '__custom__' ? '' : 'none'; };
         // 头像草稿：初始为现有头像；选图→压缩 dataURL；移除→null（保存时落库）
         let avatarDraft = ath && ath.avatar ? ath.avatar : null;
         const fileInp = ov.querySelector('#auFile');
@@ -71,15 +88,21 @@ Views.profile = (() => {
         ov.querySelector('[data-ok]').onclick = () => {
           const name = ov.querySelector('#fName').value.trim();
           if (!name) { UI.toast('请填写姓名', 'err'); return; }
+          // 位置：标准枚举直取；自定义取输入框；个人项目（无下拉）保留原值
+          let position = ath ? (ath.position || '') : '';
+          if (posSel) {
+            position = posSel.value === '__custom__' ? ov.querySelector('#fPosCustom').value.trim() : posSel.value;
+          }
           const base = {
             name, gender: ov.querySelector('#fGender').value,
             birth: ov.querySelector('#fBirth').value,
+            position,
             note: ov.querySelector('#fNote').value.trim(),
             avatar: avatarDraft || ''
           };
           if (ath) Object.assign(ath, base);
           else {
-            const obj = Object.assign({ id: U.uid('ath'), macroId: mac.id, sport: mac.sport, note: '', avatar: '' }, base);
+            const obj = Object.assign({ id: U.uid('ath'), macroId: mac.id, sport: mac.sport, position: '', note: '', avatar: '' }, base);
             Store.data.athletes.push(obj);
             state.athleteId = obj.id;   // 新建后自动选中，便于紧接着录入 1RM / 体能测试
           }
@@ -270,17 +293,35 @@ Views.profile = (() => {
   ];
   const libTest = (name) => TEST_LIBRARY.find((t) => t.name === name);
 
-  // ---------- 用户测试项目库：用户从 TEST_LIBRARY 多选或自行添加，决定「添加体能数据」弹窗显示哪些输入项 ----------
+  // ---------- 用户测试项目库：只含用户主动添加的项目（项目库弹窗勾选/自定义、KPI 添加、Excel 导入自动加入） ----------
   // 存于 settings.testItems：[{name, unit, invert, field, special('ybt'|'fms')|null}]——special 标记复合控件（YBT 双腿%、FMS 7 项评分）
+  // 不再默认灌入系统内置库：有测试数据的项目由 KPI 实验室按数据自动呈现，空项目不再占位
   function testItems() {
     const s = Store.data.settings;
     if (!Array.isArray(s.testItems)) {
-      // 默认库：旧版弹窗的 8 项固定体能指标 + FMS + YBT（保持与旧版一致；用户可在档案页增删）
-      s.testItems = [
-        ...TEST_LIBRARY.filter((t) => t.field && !['ybtLeft', 'ybtRight'].includes(t.field)).map((t) => ({ name: t.name, unit: t.unit, invert: !!t.invert, field: t.field, special: null })),
-        { name: 'FMS 功能性动作筛查', unit: '分', invert: false, field: null, special: 'fms' },
-        { name: 'YBT 下肢动态平衡', unit: '%', invert: false, field: null, special: 'ybt' }
-      ];
+      s.testItems = [];
+      Store.persist();
+    } else if (!s.testItemsV2) {
+      // 一次性迁移：旧版首次访问会把系统库全量灌入（含旧「冠军模型」一键补库的空项目），
+      // 只保留其中确有测试数据的项目；用户自创但尚无数据的项目需重新添加
+      const dataFields = new Set();
+      const dataCustom = new Set();
+      let hasFms = false, hasYbt = false;
+      const profileFields = new Set([...METRICS, ...BODY_METRICS].filter((m) => m.source === 'profile').map((m) => m.field));
+      (Store.data.profiles || []).forEach((p) => {
+        if (!p) return;
+        profileFields.forEach((f) => { if (p[f] != null && p[f] !== '') dataFields.add(f); });
+        (p.custom || []).forEach((c) => { if (c && c.name && c.value != null && c.value !== '') dataCustom.add(c.name); });
+        if (p.fms && FMS_TESTS.some((t) => p.fms[t.key] != null)) hasFms = true;
+        if (p.ybtLeft != null || p.ybtRight != null) hasYbt = true;
+      });
+      s.testItems = s.testItems.filter((t) => {
+        if (t.special === 'fms') return hasFms;
+        if (t.special === 'ybt') return hasYbt;
+        if (t.field) return dataFields.has(t.field);
+        return dataCustom.has(t.name);
+      });
+      s.testItemsV2 = true;
       Store.persist();
     }
     return s.testItems;
@@ -336,6 +377,62 @@ Views.profile = (() => {
       }
     }));
     return out;
+  }
+
+  // KPI 实验室（自定义分析）专用指标表 = 用户项目库 ∪ 全部档案中实际出现过测试数据的项目：
+  // ① 用户库已登记的项目（即使尚无人测过，选中后由算法给出空态提示）；
+  // ② 档案里录过值的固定体能/身体成分指标、自定义项目（Excel 导入/手动录入后自动出现，不写死）；
+  // ③ 1RM 类按「队里确有有效测定数据」数据驱动出现（有数据才显示）
+  function labMetrics() {
+    const items = testItems().filter((t) => !t.special);
+    const fieldSet = new Set(items.filter((t) => t.field).map((t) => t.field));
+    const nameSet = new Set(items.map((t) => t.name));
+    // 数据驱动：扫描全部体能档案，收集实际录过值的固定字段与自定义项目名
+    const dataFields = new Set();
+    const dataCustom = new Set();
+    const profileFields = new Set([...METRICS, ...BODY_METRICS].filter((m) => m.source === 'profile').map((m) => m.field));
+    (Store.data.profiles || []).forEach((p) => {
+      if (!p) return;
+      profileFields.forEach((f) => { if (p[f] != null && p[f] !== '') dataFields.add(f); });
+      (p.custom || []).forEach((c) => { if (c && c.name && c.value != null && c.value !== '') dataCustom.add(c.name); });
+    });
+    const rmWithData = new Set();
+    const rm = Store.data.athleteRm || {};
+    Object.keys(rm).forEach((aid) => Object.keys(rm[aid] || {}).forEach((exId) => {
+      if (rm[aid][exId] && rm[aid][exId].value != null) rmWithData.add(exId);
+    }));
+    const out = allMetrics().filter((m) => {
+      if (m.source === '1rm') return rmWithData.has(m.key.slice(3));
+      if (m.source === 'profile') return fieldSet.has(m.field) || nameSet.has(m.label) || dataFields.has(m.field);
+      if (m.source === 'custom') return nameSet.has(m.label) || dataCustom.has(m.label);
+      return false;
+    });
+    // 补入「库中已登记但尚无任何测试数据」的自定义项目
+    const haveCustom = new Set(out.filter((m) => m.source === 'custom').map((m) => m.label));
+    items.forEach((t) => {
+      if (t.field || haveCustom.has(t.name)) return;
+      const lib = libTest(t.name);
+      out.push({ key: 'cu:' + t.name, label: t.name, unit: t.unit || (lib && lib.unit) || '', invert: !!(lib ? lib.invert : t.invert), source: 'custom', field: t.name, cat: (lib && lib.cat) || '自定义' });
+    });
+    return out;
+  }
+
+  // 计时类单位（秒/分/毫秒）自动按「越小越好」，其余按「越大越好」——项目库与 KPI 添加项目共用，无需用户选择
+  function autoInvert(unit) { return /^(s|sec|secs|second|seconds|min|mins|minute|minutes|ms|秒|分|分钟|毫秒)$/i.test((unit || '').trim()); }
+
+  // 用户手动添加测试项目（KPI 实验室 / 档案页共用）：命中系统库则自动带上库定义（单位/方向/固定字段），否则记为自定义项目（方向按单位自动判定）
+  function addTestItem(rawName, rawUnit, invert) {
+    const name = String(rawName || '').trim();
+    if (!name) return { ok: false, msg: '请填写项目名称' };
+    const items = testItems();
+    if (items.some((t) => t.name === name)) return { ok: false, msg: '项目库中已存在「' + name + '」' };
+    const lib = libTest(name);
+    const item = lib
+      ? { name, unit: lib.unit || '', invert: !!lib.invert, field: lib.field || null, special: null }
+      : { name, unit: String(rawUnit || '').trim(), invert: invert == null ? autoInvert(rawUnit) : !!invert, field: null, special: null };
+    items.push(item);
+    saveTestItems(items);
+    return { ok: true, item };
   }
 
   // refDate：分析看板所选时期——取该日期前（含）最近一次记录，实现"不同时期"对比
@@ -429,28 +526,34 @@ Views.profile = (() => {
           <input class="ipt" id="tlNewUnit" placeholder="单位" style="flex:1;min-width:0" title="单位（秒/分/毫秒等计时单位自动按「越小越好」统计，其余按「越大越好」）">
           <button class="btn sm ghost" id="tlAddCustom" type="button">＋ 添加自定义</button>
         </div>
+        <p class="hint" style="font-size:11px;margin:0 0 6px;line-height:1.6">数值方向由系统按单位自动判定：计时类（秒/分/分钟/毫秒）→ 越小越好，其余 → 越大越好。</p>
         <div id="tlCustomList" style="display:flex;flex-direction:column;gap:4px">
-          ${customItems.map((t) => `<div class="row tlCustomRow" data-name="${U.esc(t.name)}" style="gap:6px;align-items:center"><input class="ipt" style="flex:1.5;min-width:0" value="${U.esc(t.name)}" readonly><input class="ipt tlCU" style="flex:.6;min-width:0" value="${U.esc(t.unit)}" placeholder="单位"><select class="sel tlCDir" style="flex:.9;min-width:0" title="数值方向"><option value="up"${t.invert ? '' : ' selected'}>越大越好</option><option value="down"${t.invert ? ' selected' : ''}>越小越好</option></select><button class="btn danger sm tlCDel" type="button" title="删除">✕</button></div>`).join('')}
+          ${customItems.map((t) => `<div class="row tlCustomRow" data-name="${U.esc(t.name)}" style="gap:6px;align-items:center"><input class="ipt" style="flex:1.5;min-width:0" value="${U.esc(t.name)}" readonly><input class="ipt tlCU" style="flex:.6;min-width:0" value="${U.esc(t.unit)}" placeholder="单位"><span class="hint tlCDirTag" style="flex:.9;min-width:0;font-size:11.5px">${autoInvert(t.unit) ? '越小越好' : '越大越好'}</span><button class="btn danger sm tlCDel" type="button" title="删除">✕</button></div>`).join('')}
         </div>`,
       footer: `<button class="btn ghost" data-x>取消</button><button class="btn primary" data-ok>保存</button>`,
       onMount(ov, close) {
         const cList = ov.querySelector('#tlCustomList');
-        // 计时类单位（秒/分/毫秒）默认「越小越好」，其余「越大越好」
-        const unitInvert = (u) => /^(s|sec|secs|second|seconds|min|mins|minute|minutes|ms|秒|分|分钟|毫秒)$/i.test((u || '').trim());
-        const addCustomRow = (name = '', unit = '', invert = false) => {
+        const dirTag = (unit) => (autoInvert(unit) ? '越小越好' : '越大越好');
+        const addCustomRow = (name = '', unit = '') => {
           const row = document.createElement('div');
           row.className = 'row tlCustomRow';
           row.style.cssText = 'gap:6px;align-items:center';
-          row.innerHTML = `<input class="ipt tlCN" placeholder="项目名称" style="flex:1.5;min-width:0" value="${U.esc(name)}"><input class="ipt tlCU" placeholder="单位" style="flex:.6;min-width:0" value="${U.esc(unit)}"><select class="sel tlCDir" style="flex:.9;min-width:0" title="数值方向"><option value="up"${invert ? '' : ' selected'}>越大越好</option><option value="down"${invert ? ' selected' : ''}>越小越好</option></select><button class="btn danger sm tlCDel" type="button" title="删除">✕</button>`;
+          row.innerHTML = `<input class="ipt tlCN" placeholder="项目名称" style="flex:1.5;min-width:0" value="${U.esc(name)}"><input class="ipt tlCU" placeholder="单位" style="flex:.6;min-width:0" value="${U.esc(unit)}"><span class="hint tlCDirTag" style="flex:.9;min-width:0;font-size:11.5px">${dirTag(unit)}</span><button class="btn danger sm tlCDel" type="button" title="删除">✕</button>`;
           row.querySelector('.tlCDel').onclick = () => row.remove();
           cList.appendChild(row);
         };
-        // 添加自定义项目：方向按单位自动判定（计时单位→越小越好，其余→越大越好），行内可再手动改
+        // 单位输入变化时实时刷新自动判定的方向标签
+        cList.addEventListener('input', (e) => {
+          if (!e.target.classList || !e.target.classList.contains('tlCU')) return;
+          const tag = e.target.closest('.tlCustomRow').querySelector('.tlCDirTag');
+          if (tag) tag.textContent = dirTag(e.target.value);
+        });
+        // 添加自定义项目：方向按单位自动判定（计时单位→越小越好，其余→越大越好）
         ov.querySelector('#tlAddCustom').onclick = () => {
           const name = ov.querySelector('#tlNewName').value.trim();
           const unit = ov.querySelector('#tlNewUnit').value.trim();
           if (!name) { UI.toast('请填写项目名称', 'err'); return; }
-          addCustomRow(name, unit, unitInvert(unit));
+          addCustomRow(name, unit);
           ov.querySelector('#tlNewName').value = ''; ov.querySelector('#tlNewUnit').value = '';
         };
         cList.querySelectorAll('.tlCDel').forEach((b) => { b.onclick = () => b.closest('.tlCustomRow').remove(); });
@@ -466,13 +569,12 @@ Views.profile = (() => {
             if (c.value === 'fms') next.push({ name: 'FMS 功能性动作筛查', unit: '分', invert: false, field: null, special: 'fms' });
             if (c.value === 'ybt') next.push({ name: 'YBT 下肢动态平衡', unit: '%', invert: false, field: null, special: 'ybt' });
           });
-          // 自定义项目（保留已有 + 新增）
+          // 自定义项目（保留已有 + 新增）：方向按单位自动判定
           ov.querySelectorAll('.tlCustomRow').forEach((row) => {
             const nameInp = row.querySelector('.tlCN') || row.querySelector('input[readonly]');
             const name = nameInp ? nameInp.value.trim() : '';
             const unit = row.querySelector('.tlCU').value.trim();
-            const invert = row.querySelector('.tlCDir') ? row.querySelector('.tlCDir').value === 'down' : unitInvert(unit);
-            if (name) next.push({ name, unit, invert, field: null, special: null });
+            if (name) next.push({ name, unit, invert: autoInvert(unit), field: null, special: null });
           });
           saveTestItems(next);
           close(); mount();
@@ -506,7 +608,7 @@ Views.profile = (() => {
           <div class="field"><label>体重 kg</label><input type="number" class="ipt" id="pW" step="0.1" style="width:100%"></div>
           <div class="field"><label>体脂率 %</label><input type="number" class="ipt" id="pBF" step="0.1" style="width:100%"></div>
           ${simpleItems.length ? `<div class="field full"><hr style="border-color:var(--border)"></div>
-          ${simpleItems.map((t) => `<div class="field"><label>${U.esc(t.name)}${t.unit ? ' ' + U.esc(t.unit) : ''}</label><input type="number" class="ipt pTestVal" data-name="${U.esc(t.name)}" data-field="${U.esc(t.field || '')}" step="any" style="width:100%"></div>`).join('')}` : ''}
+          ${simpleItems.map((t) => `<div class="field"><label>${U.esc(t.name)}${t.unit ? ' ' + U.esc(t.unit) : ''}</label><input type="number" class="ipt pTestVal" data-name="${U.esc(t.name)}" data-field="${U.esc(t.field || '')}" step="any" style="width:100%"></div>`).join('')}` : '<div class="field full"><hr style="border-color:var(--border)"><div class="hint" style="font-size:12px;line-height:1.7">尚未添加体能测试项目：请先在运动员档案页点「体能测试项目库」勾选或自定义项目；Excel 导入时出现的新项目也会自动加入项目库。</div></div>'}
           ${hasYbt ? `<div class="field full"><hr style="border-color:var(--border)"></div>
           <div class="field"><label>YBT左腿 %</label><input type="number" class="ipt" id="pYBTL" step="0.1" style="width:100%"></div>
           <div class="field"><label>YBT右腿 %</label><input type="number" class="ipt" id="pYBTR" step="0.1" style="width:100%"></div>` : ''}
@@ -768,6 +870,7 @@ Views.profile = (() => {
       const n = rmCount(a.id);
       const filed = (Store.data.profiles || []).some((p) => p.athleteId === a.id);
       const bits = [];
+      if (a.position) bits.push(a.position);
       if (n) bits.push('1RM × ' + n);
       if (filed) bits.push('已建档');
       return bits.length ? '（' + bits.join(' · ') + '）' : '';
@@ -795,6 +898,7 @@ Views.profile = (() => {
           </select>
         </div>
         <span class="hint" style="font-size:12px;white-space:nowrap">${U.esc(cur.sport)} · ${cur.gender || '—'} · ${age != null ? age + '岁' : '—'}${mac ? ' · ' + U.esc(mac.name) : ''}</span>
+        ${cur.position ? `<span class="chip volt">${U.esc(cur.position)}</span>` : ''}
         <span class="chip">档案 ${profN}</span>
         <span class="chip ${rmN ? 'volt' : ''}">1RM × ${rmN}</span>
         <span class="hint">名单 ${aths.length} 人</span>
@@ -1016,6 +1120,7 @@ Views.profile = (() => {
             </div>
           </div>
           <button class="btn sm ghost" id="profTestLib" title="配置「添加体能数据」弹窗中显示的测试项目">⚙ 体能测试项目库</button>
+          <button class="btn sm ghost" id="profImport" title="从 Excel 批量导入测试成绩（支持排版不统一的表格，带列映射向导）">⇪ 导入 Excel 测试表</button>
           <button class="btn sm primary" id="profAthAdd">＋ 添加运动员</button>
         </div>
         <div class="row" id="profAthBar" style="gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)"></div>
@@ -1024,6 +1129,7 @@ Views.profile = (() => {
 
     $('#profAthAdd').onclick = () => athleteDialog(null);
     $('#profTestLib').onclick = () => testLibDialog();
+    $('#profImport').onclick = () => Views.importTest.open({ onImported: () => mount() });
 
     renderAthBar(v);
     renderDetail(v);
@@ -1032,7 +1138,8 @@ Views.profile = (() => {
   // 导出数据层供 KPI 分析页（Views.kpi）复用，避免复制约 150 行辅助函数
   return {
     mount, state,
-    curMacro, planAths, METRICS, allMetrics, profileVal, FMS_TESTS, fmsTotal, fmsRecs, testItems,
-    getMetric, teamValues, metricZ, metricPct, getProfiles, dataDates, rmAsOf
+    curMacro, planAths, METRICS, allMetrics, labMetrics, addTestItem, autoInvert, profileVal, FMS_TESTS, fmsTotal, fmsRecs, testItems, testLibDialog,
+    getMetric, teamValues, metricZ, metricPct, getProfiles, dataDates, rmAsOf,
+    testLibrary: () => TEST_LIBRARY, bodyMetrics: () => BODY_METRICS
   };
 })();

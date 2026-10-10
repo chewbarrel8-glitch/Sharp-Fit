@@ -574,7 +574,6 @@ Views.kpi = (() => {
             ${ath ? U.avatar(ath, 'width:44px;height:44px;font-size:20px', true) : '<span class="avatar" style="width:44px;height:44px;font-size:20px">—</span>'}
             <div>
               <h2 id="kpiHeadName" style="font-size:18px;margin:0 0 3px">${ath ? U.esc(ath.name) : '未选择'}</h2>
-              <div class="hint">${ath ? `${U.esc(ath.sport)} · ${ath.gender || '—'}${age != null ? ' · ' + age + '岁' : ''} · ${U.esc(mac.name)}` : ''}</div>
             </div>
             ${ath ? `<span class="chip">档案 ${profN}</span><span class="chip ${rmN ? 'volt' : ''}">1RM × ${rmN}</span>` : ''}
           </div>
@@ -587,6 +586,7 @@ Views.kpi = (() => {
               ${dates.map((d) => `<option value="${d}" ${d === state.kpiDate ? 'selected' : ''}>${U.md(d)}</option>`).join('')}
             </select>
             <button class="btn primary" id="kpiReport">自定义 KPI 分析</button>
+            <button class="btn ghost" id="kpiImport">导入 Excel 测试表</button>
           </div>
         </div>
         ${!withData.length ? `<p class="hint" style="margin-top:10px">当前训练计划的运动员暂无测试数据——在「运动员档案」录入体能数据后，此处自动生成分析</p>` : ''}
@@ -596,6 +596,7 @@ Views.kpi = (() => {
     $('#kpiAth').onchange = (e) => { state.athleteId = e.target.value; mount(); };
     $('#kpiDate').onchange = (e) => { state.kpiDate = e.target.value || null; mount(); };
     $('#kpiReport').onclick = () => Views.kpiLab.open();
+    $('#kpiImport').onclick = () => Views.importTest.open({ onImported: () => mount() });
 
     renderKpi(v);
     // 指标问号点击 → 弹出说明与计算方法（事件委托，覆盖 KPI 看板全部问号）

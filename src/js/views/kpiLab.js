@@ -762,7 +762,7 @@ Views.kpiLab = (() => {
   ];
 
   // ---------- 状态 ----------
-  const state = { aths: [], metrics: [], methods: [], from: '', to: '', panels: [], charts: [], macroFrom: '', macroTo: '', macroName: '', dataMax: '' };
+  const state = { aths: [], metrics: [], methods: [], from: '', to: '', panels: [], charts: [], macroFrom: '', macroTo: '', macroName: '', dataMax: '', pos: '' };
 
   function persist() {
     Store.data.settings = Store.data.settings || {};
@@ -772,7 +772,8 @@ Views.kpiLab = (() => {
 
   function buildCtx(aths, metrics, from, to) {
     const athAll = P.planAths();
-    const metAll = P.allMetrics();
+    // 用实验室指标表（含项目库中暂无数据的自定义项目），保证新增项目能进入分析（无数据时算法给空态）
+    const metAll = P.labMetrics();
     return {
       aths: aths.map((id) => athAll.find((a) => a.id === id)).filter(Boolean),
       metrics: metrics.map((k) => metAll.find((x) => x.key === k)).filter(Boolean),
@@ -883,13 +884,14 @@ Views.kpiLab = (() => {
     if (ct === 'radar') {
       const vals = series.flatMap((s) => s.data || []).filter((v) => v != null);
       const max = res.gaugeMax || niceMax(vals);
+      const radarData = series.map((s, i) => ({ name: s.name, value: s.data, symbolSize: 4, lineStyle: { width: 2.5 }, areaStyle: { color: KL_COLORS[i % KL_COLORS.length], opacity: .12 } }));
       chart.setOption({
         tooltip: tipItem(), color: KL_COLORS,
         legend: { bottom: 0, type: 'scroll', textStyle: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 } },
         radar: { indicator: cats.map((c) => ({ name: c, max, min: 0 })), radius: '56%', center: ['50%', '48%'],
           axisName: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 }, splitArea: { areaStyle: { color: [UI.tint('var(--color-info)', .03), UI.tint('var(--color-info)', .07)] } },
           splitLine: { lineStyle: { color: UI.tint('var(--color-ink-muted)', .15) } }, axisLine: { lineStyle: { color: UI.tint('var(--color-ink-muted)', .15) } } },
-        series: [{ type: 'radar', data: series.map((s, i) => ({ name: s.name, value: s.data, symbolSize: 4, lineStyle: { width: 2.5 }, areaStyle: { color: KL_COLORS[i % KL_COLORS.length], opacity: .12 } })) }]
+        series: [{ type: 'radar', data: radarData }]
       });
       return;
     }
@@ -1018,7 +1020,7 @@ Views.kpiLab = (() => {
     res.boxes.forEach((b, i) => (b.outliers || []).forEach((v) => outliers.push([i, v])));
     if (outliers.length) series.push({ type: 'scatter', name: '离群值', data: outliers, symbolSize: 8, itemStyle: { color: 'var(--color-danger)' } });
     chart.setOption({
-      tooltip: { trigger: 'axis', ...UI.tooltipCommon, formatter: (ps) => (Array.isArray(ps) ? ps : [ps]).map((p) => p.seriesType === 'boxplot' ? `${p.marker}${p.name}：中位 <b>${fmtV(p.value[2])}</b> · Q1 ${fmtV(p.value[1])} · Q3 ${fmtV(p.value[3])}` : `${p.marker}${p.name} ${fmtV(p.value[1])}`).join('<br/>') },
+      tooltip: { trigger: 'axis', ...UI.tooltipCommon, formatter: (ps) => (Array.isArray(ps) ? ps : [ps]).map((p) => p.seriesType === 'boxplot' ? `${p.marker}${p.name}：中位 <b>${fmtV(p.value[2])}</b> · Q1 ${fmtV(p.value[1])} · Q3 ${fmtV(p.value[3])}` : `${p.marker}${p.seriesName} ${fmtV(p.value[1])}`).join('<br/>') },
       grid: gridBase,
       xAxis: { type: 'category', data: res.cats, ...UI.axisCommon, axisLabel: catAxisLabel(res.cats.length) },
       yAxis: { type: 'value', ...UI.axisCommon, scale: true },
@@ -1118,9 +1120,83 @@ Views.kpiLab = (() => {
     if (b) b.textContent = `生成看板（${state.methods.length}）`;
   }
 
+  // 手动添加测试项目到用户项目库：系统库同名自动带标准单位/方向；自定义项目方向按单位自动判定；添加后 chips 立即出现并默认选中
+  function addMetricPrompt() {
+    // 下拉提示仅列用户已添加在测试库里的项目名（不再展示系统内置全量库，避免误选未启用的内置项目）
+    const libNames = P.testItems().map((t) => t.name);
+    UI.modal({
+      title: '添加测试项目',
+      body: `
+        <div style="display:flex;gap:10px;align-items:center;margin:10px 0">
+          <label style="font-size:12px;color:var(--muted);min-width:56px">项目名</label>
+          <input class="ipt" id="klNewMet" list="klMetLib" placeholder="如：纵跳、深蹲1RM、灵敏跑台时间" style="flex:1">
+          <datalist id="klMetLib">${libNames.map((n) => `<option value="${U.esc(n)}">`).join('')}</datalist>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin:10px 0">
+          <label style="font-size:12px;color:var(--muted);min-width:56px">单位</label>
+          <input class="ipt" id="klNewUnit" placeholder="如 cm / kg / s / 次" style="width:160px">
+          <span class="hint" id="klNewDir" style="font-size:11.5px;white-space:nowrap"></span>
+        </div>`,
+      footer: `<button class="btn ghost" data-x>取消</button><button class="btn primary" data-ok>添加</button>`,
+      onMount(ov, close) {
+        const nameI = ov.querySelector('#klNewMet'), unitI = ov.querySelector('#klNewUnit'), dirI = ov.querySelector('#klNewDir');
+        nameI.focus();
+        const refreshDir = () => { dirI.textContent = unitI.value.trim() ? ('方向：' + (P.autoInvert(unitI.value) ? '越小越好' : '越大越好') + '（自动）') : ''; };
+        unitI.oninput = refreshDir;
+        const submit = () => {
+          const name = nameI.value.trim();
+          if (!name) { UI.toast('请填写项目名称', 'err'); return; }
+          const r = P.addTestItem(name, unitI.value.trim());
+          if (!r.ok) { UI.toast(r.msg, 'err'); return; }
+          close();
+          const met = P.labMetrics().find((m) => m.label === name);
+          if (met && !state.metrics.includes(met.key)) state.metrics.push(met.key);
+          renderFilters();
+          renderPanels();
+          UI.toast(`已添加「${name}」到项目库`, 'ok');
+        };
+        ov.querySelector('[data-ok]').onclick = submit;
+        nameI.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+      }
+    });
+  }
+
   function renderFilters() {
-    const aths = P.planAths();
-    const metrics = P.allMetrics();
+    const athsAll = P.planAths();
+    // 团队项目：位置下拉常显（全部位置 + 项目标准位置库 + 已用自定义位置 + 未设置），默认全部位置；个人项目隐藏该行
+    const mac = Store.activeMacro();
+    const lib = mac ? Sports.positionsOf(mac.sport) : null;
+    const usedPos = [...new Set(athsAll.map((a) => a.position || '').filter(Boolean))];
+    const posList = lib
+      ? lib.concat(usedPos.filter((p) => !lib.includes(p)))
+      : [];
+    const hasNone = athsAll.some((a) => !a.position);
+    const posRow = $('#klPosRow');
+    if (posRow) {
+      if (lib && lib.length) {
+        posRow.style.display = '';
+        const opt = (v, label) => `<option value="${U.esc(v)}"${state.pos === v ? ' selected' : ''}>${U.esc(label)}</option>`;
+        const sel = $('#klPosSel');
+        sel.innerHTML = opt('', '全部位置')
+          + posList.map((p) => opt(p, p)).join('')
+          + (hasNone ? opt('__none__', '未设置') : '');
+        if (![...sel.options].some((o) => o.value === state.pos)) { sel.value = ''; state.pos = ''; }
+        sel.onchange = () => {
+          state.pos = sel.value;
+          const inPos = (a) => state.pos === '__none__' ? !a.position : a.position === state.pos;
+          // 切换位置：自动选中该位置全部队员，原范围外的选择移除；全部位置时保留原选择
+          if (state.pos) state.aths = athsAll.filter(inPos).map((a) => a.id);
+          renderFilters();
+        };
+      } else posRow.style.display = 'none';
+    }
+    const matchPos = (a) => state.pos === '__none__' ? !a.position : (state.pos ? a.position === state.pos : true);
+    const aths = athsAll.filter(matchPos);
+    // 只显示用户测试项目库中的项目（+有测定数据的 1RM）；未选用的内置指标不出现，用户可随时「＋ 添加项目」
+    const metrics = P.labMetrics();
+    // 项目库中被移除的项目不再参与已选
+    const validMetKeys = new Set(metrics.map((m) => m.key));
+    state.metrics = state.metrics.filter((k) => validMetKeys.has(k));
     // 姓名
     $('#klAths').innerHTML = aths.map((a) => `<span class="chip ${state.aths.includes(a.id) ? 'on' : ''}" data-ath="${a.id}">${U.esc(a.name)}</span>`).join('');
     $$('#klAths [data-ath]').forEach((el) => {
@@ -1138,7 +1214,10 @@ Views.kpiLab = (() => {
       if (!g) { g = { cat: c, items: [] }; groups.push(g); }
       g.items.push(m);
     });
-    $('#klMetrics').innerHTML = groups.map((g) => `<div class="kl-mg"><span class="kl-mgl">${U.esc(g.cat)}</span>${g.items.map((m) => `<span class="chip ${state.metrics.includes(m.key) ? 'on' : ''}" data-met="${m.key}" title="${U.esc(m.label)}${m.unit ? '（' + m.unit + '）' : ''}">${U.esc(m.label)}</span>`).join('')}</div>`).join('');
+    $('#klMetrics').innerHTML = (groups.length
+      ? groups.map((g) => `<div class="kl-mg"><span class="kl-mgl">${U.esc(g.cat)}</span>${g.items.map((m) => `<span class="chip ${state.metrics.includes(m.key) ? 'on' : ''}" data-met="${m.key}" title="${U.esc(m.label)}${m.unit ? '（' + m.unit + '）' : ''}">${U.esc(m.label)}</span>`).join('')}</div>`).join('')
+      : `<span class="hint" style="font-size:12px">项目库还是空的，点右侧「＋ 添加测试项目」加入要分析的项目；导入 Excel 时出现的新项目也会自动加入项目库。</span>`)
+      + `<span class="chip" id="klAddMet" title="添加一个测试项目到项目库">＋ 添加测试项目</span>`;
     $$('#klMetrics [data-met]').forEach((el) => {
       el.onclick = () => {
         const k = el.dataset.met, i = state.metrics.indexOf(k);
@@ -1146,6 +1225,7 @@ Views.kpiLab = (() => {
         el.classList.toggle('on');
       };
     });
+    $('#klAddMet').onclick = () => addMetricPrompt();
     // 方法
     $('#klMethods').innerHTML = METHODS.map((m) => `<span class="chip ${state.methods.includes(m.id) ? 'on' : ''}" data-mth="${m.id}">${m.name}<i class="kl-info" data-minfo="${m.id}">ⓘ</i></span>`).join('');
     $$('#klMethods [data-mth]').forEach((el) => {
@@ -1198,7 +1278,7 @@ Views.kpiLab = (() => {
       host.innerHTML = `<div class="card kl-empty">尚无看板——在上方选择分析方法后点击「生成看板」。<br/>生成后可继续调整筛选、选择更多方法追加看板。</div>`;
       return;
     }
-    const metAll = P.allMetrics();
+    const metAll = P.labMetrics();
     host.innerHTML = state.panels.map((pn, idx) => {
       const m = METHODS.find((x) => x.id === pn.methodId);
       if (!m) return '';
@@ -1323,7 +1403,7 @@ Views.kpiLab = (() => {
     const macroName = state.macroName || '未命名计划';
     const rangeStr = (state.from ? U.md(state.from) : '全部') + ' ~ ' + (state.to ? U.md(state.to) : '至今');
     const athNames = state.aths.map((id) => { const a = P.planAths().find((x) => x.id === id); return a ? a.name : id; }).join('、');
-    const metNames = state.metrics.map((k) => { const m = P.allMetrics().find((x) => x.key === k); return m ? m.label : k; }).join('、');
+    const metNames = state.metrics.map((k) => { const m = P.labMetrics().find((x) => x.key === k); return m ? m.label : k; }).join('、');
     let body = `<div style="max-height:60vh;overflow:auto;padding:4px 8px 4px 0;font-size:13px;line-height:1.9;color:var(--color-ink)">
       <div style="margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid color-mix(in oklch, var(--color-ink-muted) 20%, transparent)">
         <b style="font-size:15px">自定义 KPI 分析 · 详细文字报告</b><br/>
@@ -1362,14 +1442,15 @@ Views.kpiLab = (() => {
     if (document.getElementById('kpiLabWrap')) return;
     const aths = P.planAths();
     if (!aths.length) { UI.toast('当前训练计划暂无运动员，请先在「运动员档案」添加', 'err'); return; }
-    const metrics = P.allMetrics();
-    if (!metrics.length) { UI.toast('暂无可用测试项目，请先录入体能数据', 'err'); return; }
+    const metrics = P.labMetrics();
+    if (!metrics.length) UI.toast('项目库中暂无可分析的项目，请在筛选区点「＋ 添加测试项目」', 'err');
     // 恢复上次看板
     const saved = (Store.data.settings || {}).kpiLabPanels || [];
     state.panels = saved.filter((p) => p && p.id && METHODS.some((m) => m.id === p.methodId));
     state.aths = aths.map((a) => a.id);
+    state.pos = '';
     const defM = metrics.filter((m) => ['sq', 'bp', 'dl'].includes(m.key)).map((m) => m.key);
-    state.metrics = defM.length ? defM : [metrics[0].key];
+    state.metrics = defM.length ? defM : (metrics[0] ? [metrics[0].key] : []);
     state.methods = [];
     // 可选日期边界 = 计划周期 ∪ 全部测试数据日期（入队测试常在计划开始前进行，不能排除；但也不能选到无意义的远古日期）
     const macro = Store.activeMacro();
@@ -1462,6 +1543,7 @@ Views.kpiLab = (() => {
           <b style="font-size:15px">自定义 KPI 分析</b>
           <div class="hint" style="font-size:11px">开放式体能数据分析 · 选筛选 → 多选方法 → 生成看板，每个方法一个看板，可继续追加</div>
         </div>
+        <button class="btn ghost sm" id="klImport" type="button">导入 Excel 测试表</button>
         <button class="btn ghost sm" id="klPdf" type="button">导出报告</button>
         <button class="btn ghost sm" id="klTxt" type="button">生成详细文字报告</button>
         <span class="spacer"></span>
@@ -1469,6 +1551,10 @@ Views.kpiLab = (() => {
       </div>
       <div class="kl-body">
         <div class="card">
+          <div class="kl-frow" id="klPosRow" style="display:none"><span class="kl-lab">位置</span>
+            <select class="sel" id="klPosSel" style="min-width:150px"></select>
+            <span class="hint" style="font-size:10.5px;align-self:center">不选默认为全部位置；选择位置后自动选中该位置队员</span>
+          </div>
           <div class="kl-frow"><span class="kl-lab">姓名</span><div class="kl-chips" id="klAths"></div>
             <button class="btn sm ghost" id="klAthAll" type="button">全选</button><button class="btn sm ghost" id="klAthNone" type="button">清空</button></div>
           <div class="kl-frow"><span class="kl-lab">测试项目</span><div class="kl-chips scr" id="klMetrics"></div></div>
@@ -1497,6 +1583,7 @@ Views.kpiLab = (() => {
 
     $('#klClose').onclick = close;
     $('#klGen').onclick = generate;
+    $('#klImport').onclick = () => Views.importTest.open({ onImported: () => { renderFilters(); renderPanels(); } });
     $('#klPdf').onclick = exportPdf;
     $('#klTxt').onclick = textReport;
     renderFilters();

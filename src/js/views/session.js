@@ -348,7 +348,7 @@ Views.session = (() => {
         };
         box.innerHTML = `
           <div class="card-title" style="margin-top:14px"><h3 style="font-size:13px">运动员训练计划与完成情况</h3></div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:10px">
+          <div style="display:grid;grid-template-columns:1fr;gap:10px">
             ${athIds.map((aid) => {
               const a = Store.data.athletes.find((x) => x.id === aid);
               if (!a) return '';
@@ -410,6 +410,7 @@ Views.session = (() => {
                     if (athleteExpanded && Array.isArray(personalDefs) && personalDefs.length && Array.isArray(rs.setLogs) && rs.setLogs.length) {
                       const defs = personalDefs, logs = rs.setLogs;
                       const formalCount = defs.filter((d) => d.kind !== 'warm').length;
+                      const doneFormal = logs.filter((lg, k) => lg && lg.done !== false && defs[k] && defs[k].kind !== 'warm').length;
                       const subRows = defs.map((d, k) => {
                         const lg = logs[k] || {};
                         const planWd = Calc.setDefWeight(d, (Store.athRm(aid, r.exId) || {}).value || null);
@@ -431,7 +432,7 @@ Views.session = (() => {
                           <td class="r num">${isKg ? (r.pct ?? '—') : '—'}</td>
                           <td class="r num">${pw && isKg ? U.fmt(pw) : U.fmt(Calc.planRowDose(r))}</td>
                           <td colspan="3" class="hint" style="font-size:10px">逐组记录（热身组不计入 1RM 估算）</td>
-                          <td></td>
+                          <td class="r num${doneFormal < formalCount ? ' volt' : ''}">${doneFormal}/${formalCount}</td>
                           <td class="r num" data-est="${aid}:${i}">${estCell}</td>
                         </tr>${subRows}<tr class="ath-set-actions"><td colspan="8"><div class="row" style="gap:6px;padding:4px 0"><button class="btn sm ex-ath-add-warm" data-ath-row="${i}" data-ath-id="${aid}">＋ 热身组</button><button class="btn sm primary ex-ath-add-work" data-ath-row="${i}" data-ath-id="${aid}">＋ 正式组</button><span class="hint">正式组数量从中周期组数带入</span></div></td></tr>`;
                     }
@@ -439,6 +440,12 @@ Views.session = (() => {
                     const planDoseTxt = isKg
                       ? (pw ? U.fmt(pw) + 'kg' : '—')
                       : (Calc.planRowDose(r) ? U.fmt(Calc.planRowDose(r)) + unit : '—');
+                    // 完成组数：有逐组记录则自动汇总已勾选正式组，否则带入计划组数
+                    const flatDoneSets = (Array.isArray(rs.setLogs) && rs.setLogs.length && Array.isArray(personalDefs) && personalDefs.length)
+                      ? rs.setLogs.filter((lg, k) => lg && lg.done !== false && personalDefs[k] && personalDefs[k].kind !== 'warm').length
+                      : null;
+                    const setsDisplay = flatDoneSets != null ? flatDoneSets : (Number(r.sets) || 0);
+                    const setsAuto = flatDoneSets == null;
                     return `${complexHeader}<tr>
                       <td class="athlete-action-cell">${rowLabel}</td>
                       <td class="r num">${isKg ? (r.pct ?? '—') : '—'}</td>
@@ -446,7 +453,7 @@ Views.session = (() => {
                       <td class="r">${isKg ? `<input class="ipt" type="number" step="0.5" min="0" style="width:68px;text-align:right" value="${rs.w ?? ''}" data-rw="${aid}:${i}" title="实际负重">` : '—'}</td>
                       <td class="r">${`<div class="row" style="gap:3px;flex-wrap:nowrap;justify-content:flex-end"><input class="ipt${rs.actualOwn ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:60px;text-align:right" value="${rs.actual ?? ''}" data-ra="${aid}:${i}" title="单组完成量"><small class="hint">${unit}</small></div>`}</td>
                       <td class="r">${isKg ? `<input class="ipt" type="number" min="0" max="10" style="width:46px;text-align:right" value="${rs.rir ?? ''}" data-rr="${aid}:${i}" title="RIR">` : '—'}</td>
-                      <td class="r"><input class="ipt${rs.setsOwn ? '' : ' auto-val'}" type="number" step="any" min="0" style="width:46px;text-align:right" value="${rs.sets ?? ''}" data-rs="${aid}:${i}" title="组数"></td>
+                      <td class="r num${setsAuto ? ' auto-val' : ''}">${setsDisplay}</td>
                       <td class="r num" data-est="${aid}:${i}">${estCell}</td>
                     </tr>`;
                   }).join('')}</tbody>
@@ -562,9 +569,9 @@ Views.session = (() => {
             }
           };
         });
-        // 每人每动作：实际重量 / 实际组数 / 单组量 / RIR
+        // 每人每动作：实际重量 / 单组量 / RIR（完成组数由逐组勾选自动汇总，无需手动输入）
         const bindRes = (inp, field) => {
-          const key = inp.dataset.rw ?? inp.dataset.rs ?? inp.dataset.ra ?? inp.dataset.rr;
+          const key = inp.dataset.rw ?? inp.dataset.ra ?? inp.dataset.rr;
           const [aid, idx] = key.split(':');
           const i = Number(idx);
           inp.onchange = () => {
@@ -572,9 +579,12 @@ Views.session = (() => {
             const rs = ses.results[aid][i];
             const v = inp.value === '' || isNaN(Number(inp.value)) ? null : Number(inp.value);
             rs[field] = v;
-            // 组数/单组量：非空=该运动员单独修改（不再跟随计划）；清空=恢复跟随计划（下次渲染自动带回计划值）
-            if (field === 'sets') rs.setsOwn = v != null;
-            if (field === 'actual') rs.actualOwn = v != null;
+            // 单组量：非空=该运动员单独修改（不再跟随计划）；清空=恢复跟随计划（下次渲染自动带回计划值）
+            if (field === 'actual') {
+              rs.actualOwn = v != null;
+              // 填了单组量时自动带入计划组数（完成列改为自动汇总，不再手动输入组数）
+              if (v != null && !rs.setsOwn) { rs.sets = Number(ses.rows[i].sets) || 0; rs.setsOwn = true; }
+            }
             saveEst(ses, aid, i);
             Store.save();
             // 重新渲染运动员区：填写单组量后该行才出现「估算1RM + 更新1RM」组合框，清空则隐藏/恢复计划带入
@@ -582,7 +592,6 @@ Views.session = (() => {
           };
         };
         $$('[data-rw]', box).forEach((inp) => bindRes(inp, 'w'));
-        $$('[data-rs]', box).forEach((inp) => bindRes(inp, 'sets'));
         $$('[data-ra]', box).forEach((inp) => bindRes(inp, 'actual'));
         $$('[data-rr]', box).forEach((inp) => bindRes(inp, 'rir'));
         // 逐组记录：data-sl="aid:rowIdx:setIdx" data-slf="w|actual|rir|done"
