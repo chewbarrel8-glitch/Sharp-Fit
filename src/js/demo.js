@@ -2,6 +2,29 @@
 // 通过侧边栏「载入示例」载入；纯浏览器脚本，依赖全局 Store / U / Calc（与各视图脚本同源加载）
 // 载入策略：合并而非覆盖——用户已创建的计划/运动员/动作等数据全部保留，示例作为一套新增计划并存；
 // 「退出示例」时仅精确移除示例创建的数据，并切回用户载入前正在查看的计划。
+
+// 示例队员名单（[姓名, 生日, 标准位置, 备注]）：seedDemo 造数与旧库位置补全迁移共用同一数据源
+// 位置取篮球标准枚举（控球后卫/得分后卫/小前锋/大前锋/中锋，每位置 3 人）
+const SEED_ROSTER = [
+  ['陈浩', '1998-03-12', '小前锋', '明星锋线 · 队长'],
+  ['刘致远', '2002-07-02', '控球后卫', '伤后复出'],
+  ['王俊杰', '1999-11-20', '中锋', ''],
+  ['李明轩', '2000-01-15', '大前锋', ''],
+  ['张天翼', '2001-05-08', '得分后卫', ''],
+  ['赵子涵', '1997-09-23', '小前锋', ''],
+  ['孙宇翔', '2000-12-03', '控球后卫', '组织后卫'],
+  ['周凯', '1999-04-19', '中锋', ''],
+  ['吴承宇', '2001-08-27', '大前锋', ''],
+  ['郑浩然', '2000-02-14', '得分后卫', ''],
+  ['冯启铭', '1998-06-30', '小前锋', ''],
+  ['江沐宸', '2002-10-11', '控球后卫', ''],
+  ['韩旭', '1999-01-25', '中锋', ''],
+  ['杨帆', '2001-03-09', '得分后卫', '锋卫摇摆人'],
+  ['高翔', '2000-09-17', '大前锋', '']
+];
+// 姓名 → 标准位置映射：供 Store 旧库迁移时为早期 seed（未写 position）的示例队员补位置
+window.SEED_DEMO_POS = Object.fromEntries(SEED_ROSTER.map(([name, , position]) => [name, position]));
+
 window.seedDemo = function seedDemo() {
   // 已载入过示例则不重复载入
   if (Store.data && Store.data.settings && Store.data.settings.demo) return false;
@@ -224,25 +247,9 @@ window.seedDemo = function seedDemo() {
     }
   });
 
-  // ---------- 15 名运动员 ----------
-  const roster = [
-    ['陈浩', '1998-03-12', '明星锋线 · 队长'],
-    ['刘致远', '2002-07-02', '控球后卫 · 伤后复出'],
-    ['王俊杰', '1999-11-20', '中锋'],
-    ['李明轩', '2000-01-15', '大前锋'],
-    ['张天翼', '2001-05-08', '得分后卫'],
-    ['赵子涵', '1997-09-23', '小前锋'],
-    ['孙宇翔', '2000-12-03', '组织后卫'],
-    ['周凯', '1999-04-19', '中锋'],
-    ['吴承宇', '2001-08-27', '大前锋'],
-    ['郑浩然', '2000-02-14', '得分后卫'],
-    ['冯启铭', '1998-06-30', '小前锋'],
-    ['江沐宸', '2002-10-11', '控球后卫'],
-    ['韩旭', '1999-01-25', '中锋'],
-    ['杨帆', '2001-03-09', '锋卫摇摆人'],
-    ['高翔', '2000-09-17', '大前锋']
-  ];
-  const aths = roster.map(([name, birth, note]) => ({ id: U.uid('ath'), macroId, name, sport: '篮球', gender: '男', birth, note }));
+  // ---------- 15 名运动员（名单见顶层 SEED_ROSTER） ----------
+  const roster = SEED_ROSTER;
+  const aths = roster.map(([name, birth, position, note]) => ({ id: U.uid('ath'), macroId, name, sport: '篮球', gender: '男', birth, position, note }));
   d.athletes.push(...aths);
   macRef.athletes = aths.map((a) => a.id);
 
@@ -360,7 +367,7 @@ window.seedDemo = function seedDemo() {
             if (Calc.metricOf(r) === 'reps' && r.exId) {
               const rm = Store.athRm(a.id, r.exId);
               const w = rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight;
-              return { w, actual: (Number(r.sets) || 0) * (Number(r.reps) || 0), rir: 2, actualOwn: true };
+              return { w, actual: Number(r.reps) || 0, sets: Number(r.sets) || 0, setsOwn: true, rir: 2, actualOwn: true };
             }
             return { w: null, actual: null, rir: 2 };
           });
@@ -406,6 +413,9 @@ window.exitDemo = function exitDemo() {
   const restore = dm.prevActiveMacroId && d.macros.some((m) => m.id === dm.prevActiveMacroId)
     ? dm.prevActiveMacroId
     : (d.macros.length ? d.macros[0].id : null);
+  // 导入新建的运动员不属于示例自带清单（未被上面删除），但其 macroId 指向即将删除的示例计划；
+  // 迁移到恢复后的计划，避免成为 KPI/档案页看不到的「孤儿运动员」
+  if (restore) for (const a of d.athletes) if (a.macroId === dm.macroId) a.macroId = restore;
   d.settings.activeMacroId = restore;
   delete d.settings.demo;
   Store.save();

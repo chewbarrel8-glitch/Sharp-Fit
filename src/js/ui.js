@@ -5,7 +5,7 @@ const UI = {
   toast(msg, type = '') {
     const el = document.createElement('div');
     el.className = 'toast ' + type;
-    el.textContent = msg;
+    el.textContent = window.I18n ? I18n.t(msg) : msg;
     $('#toastWrap').appendChild(el);
     setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 320); }, 2200);
   },
@@ -46,6 +46,7 @@ const UI = {
     const initialFocus = ov.querySelector('[autofocus], .modal-x, button, input, select, textarea');
     if (initialFocus) requestAnimationFrame(() => initialFocus.focus());
     if (onMount) onMount(ov, close);
+    if (window.I18n) I18n.apply(ov);
     return close;
   },
 

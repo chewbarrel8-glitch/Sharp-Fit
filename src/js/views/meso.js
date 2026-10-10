@@ -741,7 +741,7 @@ Views.meso = (() => {
         const sesArr = days.map((d) => Store.data.sessions.filter((s) => s.date === d).length);
         if (hint) hint.textContent = `第${cnNum(state.weekIdx + 1)}周 · ${U.md(wk.s)} — ${U.md(wk.e)} · 按日`;
         ch.setOption({
-          grid: { left: 50, right: 56, top: 30, bottom: 28 },
+          grid: { left: 50, right: 56, top: 44, bottom: 28 },
           legend: { top: 0, left: 0, itemWidth: 12, itemHeight: 8, textStyle: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 } },
           tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, {
             formatter: (ps) => {
@@ -779,7 +779,7 @@ Views.meso = (() => {
         loadArr.push(Math.round(load)); sesArr.push(ses);
       });
       ch.setOption({
-        grid: { left: 50, right: 56, top: 30, bottom: weeks.length > 5 ? 48 : 28 },
+        grid: { left: 50, right: 56, top: 44, bottom: weeks.length > 5 ? 48 : 28 },
         legend: { top: 0, left: 0, itemWidth: 12, itemHeight: 8, textStyle: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 } },
         tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, {
           formatter: (ps) => {
@@ -892,7 +892,7 @@ Views.meso = (() => {
         const volData = days.map((x) => Math.round(Store.dayActualTonnage(x)));
         if (hint) hint.textContent = `第${cnNum(state.weekIdx + 1)}周 · ${U.md(wk.s)} — ${U.md(wk.e)} · 按日`;
         ch.setOption({
-          grid: { left: 60, right: 60, top: 30, bottom: 36 },
+          grid: { left: 60, right: 60, top: 44, bottom: 36 },
           legend: { top: 0, left: 0, itemWidth: 12, itemHeight: 8, textStyle: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 } },
           tooltip: Object.assign({}, UI.tooltipCommon, {
             formatter: (ps) => {
@@ -935,7 +935,7 @@ Views.meso = (() => {
       });
       if (hint) hint.textContent = '按周 · 量与负荷为周合计';
       ch.setOption({
-        grid: { left: 60, right: 60, top: 30, bottom: weeks.length > 5 ? 48 : 28 },
+        grid: { left: 60, right: 60, top: 44, bottom: weeks.length > 5 ? 48 : 28 },
         legend: { top: 0, left: 0, itemWidth: 12, itemHeight: 8, textStyle: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 } },
         tooltip: Object.assign({}, UI.tooltipCommon, {
           formatter: (ps) => {

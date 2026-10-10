@@ -2149,6 +2149,43 @@ async function finalize(code) {
   assert(labOpen && labOpen.dates && labOpen.quick === 4, '日期范围筛选含起止日期 + 全部/近90/近28/近7 快捷');
   assert(labOpen && labOpen.gen, '含「生成看板」按钮');
 
+  // 测试项目 = 用户项目库 ∪ 有测试数据的项目（不写死内置全量库）：含添加入口，空项不出现，有数据项自动出现
+  const libScope = await evaluate(`(() => {
+    const w = document.querySelector('#kpiLabWrap');
+    const chips = [...w.querySelectorAll('#klMetrics [data-met]')].map((c) => c.dataset.met);
+    return {
+      shown: chips.length,
+      addBtn: !!w.querySelector('#klAddMet'),
+      unchosenAbsent: !w.querySelector('#klMetrics [data-met="cu:3000m跑"]'),
+      emptyAbsent: !w.querySelector('#klMetrics [data-met="cu:蹲跳 SJ"]') && !w.querySelector('#klMetrics [data-met="cu:T测试"]'),
+      dataDriven: ['cmj', 'sp', 'height'].every((k) => chips.includes(k))
+    };
+  })()`);
+  assert(libScope && libScope.addBtn && libScope.unchosenAbsent && libScope.emptyAbsent && libScope.dataDriven,
+    'KPI 实验室项目 = 用户项目库 ∪ 有数据项目（添加入口、空项不占位、有数据自动出现）' + JSON.stringify(libScope));
+
+  // 手动添加测试项目：库内项目自动带单位/方向；添加后 chips 立即出现并选中
+  await evaluate(`document.querySelector('#klAddMet').click(); 'ok'`);
+  await sleep(300);
+  const addM = await evaluate(`(() => {
+    const ov = [...document.querySelectorAll('.overlay')].pop();
+    if (!ov || !ov.querySelector('#klNewMet')) return { ok: false };
+    ov.querySelector('#klNewMet').value = '六边形跳';
+    ov.querySelector('[data-ok]').click();
+    return { ok: true };
+  })()`);
+  await sleep(300);
+  const afterAdd = await evaluate(`(() => {
+    const w = document.querySelector('#kpiLabWrap');
+    const chip = w.querySelector('#klMetrics [data-met="cu:六边形跳"]');
+    const items = (Store.data.settings.testItems || []);
+    const it = items.find(t => t.name === '六边形跳');
+    return { chipShown: !!chip, chipOn: chip && chip.classList.contains('on'), registered: !!it, unit: it && it.unit, invert: it && it.invert };
+  })()`);
+  assert(addM && addM.ok && afterAdd && afterAdd.chipShown && afterAdd.chipOn && afterAdd.registered && afterAdd.unit === 's' && afterAdd.invert === true,
+    '手动添加项目：自动识别为库内项目（单位s/越小越好），chips 立即出现并选中 ' + JSON.stringify(afterAdd));
+
+
   // 方法 ⓘ → 算法说明弹窗（含公式）并可关闭
   const algoM = await evaluate(`(() => {
     const w = document.querySelector('#kpiLabWrap');
@@ -2162,7 +2199,7 @@ async function finalize(code) {
   assert(algoM, '方法 ⓘ 弹出算法说明弹窗（含计算公式）并可关闭');
 
   // 选 2 种方法（基线对比 + 综合排名）→ 补选体能指标 CMJ（seed 的 1RM 多负荷测试同日，需多日期指标才能算基线）→ 生成 → 图型选择弹窗（推荐置顶）
-  const pick1 = await evaluate(`(() => {
+  await evaluate(`(() => {
     window.__klT = [];
     if (!window.__klTWatch) {
       window.__klTWatch = true;
@@ -2173,10 +2210,13 @@ async function finalize(code) {
     w.querySelector('#klMethods [data-mth="delta"]').click();
     w.querySelector('#klMethods [data-mth="rank"]').click();
     w.querySelector('#klGen').click();
-    const ov = [...document.querySelectorAll('.overlay')].pop();
-    return ov ? { dialog: ov.querySelector('.modal-head h3').textContent.includes('选择图型'), cts: ov.querySelectorAll('.kl-ct').length, rec: ov.querySelectorAll('.kl-ct.rec').length, recFirst: ov.querySelector('.kl-ct') && ov.querySelector('.kl-ct').classList.contains('rec') } : { dialog: false };
+    return 'ok';
   })()`);
-  await sleep(400);
+  const pick1 = await evalWait(`(() => {
+    const ov = [...document.querySelectorAll('.overlay')].pop();
+    if (!ov || !ov.querySelector('.kl-ct')) return null;
+    return { dialog: ov.querySelector('.modal-head h3').textContent.includes('选择图型'), cts: ov.querySelectorAll('.kl-ct').length, rec: ov.querySelectorAll('.kl-ct.rec').length, recFirst: ov.querySelector('.kl-ct') && ov.querySelector('.kl-ct').classList.contains('rec') };
+  })()`, (v) => v && v.dialog);
   assert(pick1 && pick1.dialog, '生成看板弹出「选择图型」对话框（逐方法选择）');
   assert(pick1 && pick1.cts >= 3 && pick1.rec === 1 && pick1.recFirst, '图型候选含★系统推荐且推荐项置顶');
 
@@ -2235,8 +2275,7 @@ async function finalize(code) {
 
   // 生成看板后可继续追加新方法（Z 分数）→ 共 3 个
   await evaluate(`(() => { const w = document.querySelector('#kpiLabWrap'); w.querySelector('#klMethods [data-mth="zscore"]').click(); w.querySelector('#klGen').click(); return 'ok'; })()`);
-  await sleep(400);
-  const pick3 = await evaluate(`(() => { const ov = [...document.querySelectorAll('.overlay')].pop(); if (!ov || !ov.querySelector('.kl-ct')) return { d: false }; (ov.querySelector('.kl-ct.rec') || ov.querySelector('.kl-ct')).click(); ov.querySelector('[data-ok]').click(); return { d: true }; })()`);
+  const pick3 = await evalWait(`(() => { const ov = [...document.querySelectorAll('.overlay')].pop(); if (!ov || !ov.querySelector('.kl-ct')) return null; (ov.querySelector('.kl-ct.rec') || ov.querySelector('.kl-ct')).click(); ov.querySelector('[data-ok]').click(); return { d: true }; })()`, (v) => v && v.d);
   await sleep(700);
   assert(pick3 && pick3.d, '已生成看板后可继续追加新方法（图型弹窗 1/1）');
   const panelN = await evaluate(`({ n: document.querySelectorAll('#klPanels .kl-panel').length, toasts: (window.__klT || []).slice(-8) })`);
@@ -2276,9 +2315,8 @@ async function finalize(code) {
   const dForce = await evaluate(`(() => {
     const s = Store.data.sessions.find((x) => (x.athletes || []).length >= 3 && (x.rows || []).some((r) => r.pct));
     if (!s) return null;
-    const pick = document.querySelector('#dPick');
-    pick.value = s.date;
-    pick.dispatchEvent(new Event('change', { bubbles: true }));
+    Views.session.state.date = s.date;
+    Views.session.mount();
     return s.date;
   })()`);
   await sleep(800);
@@ -2288,14 +2326,14 @@ async function finalize(code) {
     if (!card) {
       const dPick = document.querySelector('#dPick');
       return { _diag: { nCards: cards.length, pick: dPick && dPick.value,
-        cards: cards.map((c) => ({ srpe: c.querySelectorAll('[data-srpe]').length, ra: c.querySelectorAll('[data-ra]').length, rs: c.querySelectorAll('[data-rs]').length, name: (c.querySelector('[data-f="name"]') || {}).value })) } };
+        cards: cards.map((c) => ({ srpe: c.querySelectorAll('[data-srpe]').length, ra: c.querySelectorAll('[data-ra]').length, setsCells: c.querySelectorAll('.athlete-plan-table td.r.num').length, name: (c.querySelector('[data-f="name"]') || {}).value })) } };
     }
     const html = card.innerHTML;
     return {
-      hasW: html.includes('实际重量'), hasA: html.includes('单组量'), hasSets: html.includes('组数'), hasR: html.includes('RIR'),
+      hasW: html.includes('实际重量'), hasA: html.includes('单组量'), hasSets: html.includes('完成'), hasR: html.includes('RIR'),
       srpeSliders: card.querySelectorAll('[data-srpe]').length,
       resInputs: card.querySelectorAll('[data-ra]').length,
-      setInputs: card.querySelectorAll('[data-rs]').length,
+      setsCells: card.querySelectorAll('.athlete-plan-table td.r.num').length,
       planNoActual: !card.querySelector('[data-table] [data-f="actual"]'),
       planNoWeight: !card.querySelector('[data-table] [data-f="weight"]') && !!card.querySelector('[data-table] .ex-pct'),
       hasUpBtn: !!card.querySelector('[data-uprm]')
@@ -2305,7 +2343,7 @@ async function finalize(code) {
   assert(resTbl && resTbl.hasW && resTbl.hasA && resTbl.hasSets && resTbl.hasR, '训练课每人动作含 实际重量/组数/单组量/RIR');
   assert(resTbl && resTbl.planNoActual, '训练课计划表为计划模式（实际数据移至每人结果表）');
   assert(resTbl && resTbl.planNoWeight, '训练课顶部计划表只显示 %1RM 不显示重量（重量按每人 1RM 内部换算）');
-  assert(resTbl && resTbl.srpeSliders >= 3 && resTbl.resInputs >= 3 && resTbl.setInputs >= 3, `sRPE 按人设定（${resTbl && resTbl.srpeSliders} 个滑杆 · ${resTbl && resTbl.resInputs} 行单组量 · ${resTbl && resTbl.setInputs} 行组数）`);
+  assert(resTbl && resTbl.srpeSliders >= 3 && resTbl.resInputs >= 3 && resTbl.setsCells >= 3, `sRPE 按人设定（${resTbl && resTbl.srpeSliders} 个滑杆 · ${resTbl && resTbl.resInputs} 行单组量 · ${resTbl && resTbl.setsCells} 个完成组数格）`);
 
   const sesCheck = await evaluate(`(() => {
     const cards = [...document.querySelectorAll('#sesList .card[data-ses]')];
@@ -2322,25 +2360,26 @@ async function finalize(code) {
     slider.dispatchEvent(new Event('change', { bubbles: true }));
     const entry = Store.data.loadEntries.find((e) => e.sessionId === ses.id && e.athleteId === aid);
     const srpeOk = (ses.athSrpe || {})[aid] === 8 && entry && entry.rpe === 8 && entry.load === Math.round(8 * ses.duration);
-    // 每人结果：实际重量 100 × 实际 4 组 × 单组 3 次 × RIR 1 → 估算 1RM 按单组次数 = 100×(1+4/30)
+    // 每人结果：实际重量 100 × 计划组数自动带入 × 单组 3 次 × RIR 1 → 估算 1RM 按单组次数
     const tr = card.querySelector('[data-ra]').closest('tr');
-    const rw = tr.querySelector('[data-rw]'), rs2 = tr.querySelector('[data-rs]'), ra = tr.querySelector('[data-ra]'), rr = tr.querySelector('[data-rr]');
+    const rw = tr.querySelector('[data-rw]'), ra = tr.querySelector('[data-ra]'), rr = tr.querySelector('[data-rr]');
     rw.value = '100'; rw.dispatchEvent(new Event('change', { bubbles: true }));
-    rs2.value = '4'; rs2.dispatchEvent(new Event('change', { bubbles: true }));
+    // 完成组数由计划自动带入（r.sets），无需手动输入
     ra.value = '3'; ra.dispatchEvent(new Event('change', { bubbles: true }));
     rr.value = '1'; rr.dispatchEvent(new Event('change', { bubbles: true }));
     const after = (Store.athRm(aid, row.exId) || {}).value;
     const recA = Store.data.athleteRm[aid] && Store.data.athleteRm[aid][row.exId];
     const last = recA && recA.history && recA.history.length ? recA.history[recA.history.length - 1] : null;
     const dose0 = (() => { const rr0 = (ses.results[aid] || [])[0] || {}; const d = Calc.actualRowDose(row, rr0); const w0 = rr0.w; return { reps: d.total, kg: (Number(w0) || 0) * d.total }; })();
+    const planSets = Number(row.sets) || 0;
     return { srpeOk, before, after, expect: Calc.estimate1RM(100, 3, 1),
       keepBase: before == null ? (after === Calc.estimate1RM(100, 3, 1)) : (after === before),
       lastIsEst: !!last && last.value === Calc.estimate1RM(100, 3, 1) && last.source === 'session',
       hasHist: !!(recA && recA.history && recA.history.length),
-      rowReps: dose0.reps, rowKg: dose0.kg, doseOk: dose0.reps === 12 && dose0.kg === 1200 };
+      rowReps: dose0.reps, rowKg: dose0.kg, planSets, doseOk: dose0.reps === planSets * 3 && dose0.kg === 100 * planSets * 3 };
   })()`);
   assert(sesCheck && sesCheck.srpeOk, 'sRPE 按运动员写入并同步负荷记录');
-  assert(sesCheck && sesCheck.doseOk, `实际总剂量 = 实际组数 × 单组量（4 组 × 3 次 = 12 次，吨位 100×12 = 1,200 kg；实际 ${sesCheck && sesCheck.rowReps} 次 / ${sesCheck && sesCheck.rowKg} kg）`);
+  assert(sesCheck && sesCheck.doseOk, `实际总剂量 = 计划组数 × 单组量（${sesCheck && sesCheck.planSets} 组 × 3 次 = ${sesCheck && sesCheck.planSets * 3} 次，吨位 100×${sesCheck && sesCheck.planSets * 3} = ${100 * (sesCheck && sesCheck.planSets * 3)} kg；实际 ${sesCheck && sesCheck.rowReps} 次 / ${sesCheck && sesCheck.rowKg} kg）`);
   assert(sesCheck && sesCheck.keepBase && sesCheck.lastIsEst && sesCheck.hasHist, `自动估算 1RM 按单组次数追加为最新记录、不覆盖基准（基准 ${sesCheck && sesCheck.before == null ? '新建' : sesCheck && sesCheck.before}kg，最新记录 ${sesCheck && sesCheck.expect}kg 来源=训练课）`);
 
   // 「更新1RM」按钮：显式点击把本次估算提升为生效 1RM（下次训练按此值计划重量），同时追加为最新历史记录；同课同动作测试记录去重
@@ -2723,14 +2762,13 @@ async function finalize(code) {
     if (!card) return { noCard: true };
     const ses = Store.data.sessions.find((s) => s.name === '三量纲测试课' && s.date === '${sesDate}');
     const aid = ses.athletes[0];
-    const fill = (idx, sets, perSet) => {
-      const sInp = card.querySelector('[data-rs="' + aid + ':' + idx + '"]');
-      sInp.value = String(sets); sInp.dispatchEvent(new Event('change', { bubbles: true }));   // 触发运动员区重渲染
+    const fill = (idx, perSet) => {
+      // 完成组数由计划带入（r.sets 已在计划表设好），无需手动输入；只需填单组量触发重渲染
       const inp = document.querySelector('.card[data-ses="' + ses.id + '"] [data-ra="' + aid + ':' + idx + '"]');
       inp.value = String(perSet); inp.dispatchEvent(new Event('change', { bubbles: true }));
     };
     // 行0：6 组 × 单组 400m = 2400m；行1：8 组 × 20m = 160m；行2：3 组 × 120s = 360s
-    fill(0, 6, 400); fill(1, 8, 20); fill(2, 3, 120);
+    fill(0, 400); fill(1, 20); fill(2, 120);
     const fresh = document.querySelector('#sesList .card[data-ses="' + ses.id + '"]');
     const d1 = Store.sessionActualDose(ses, aid, { actualOnly: true });
     // 其余 2 人未填 → 全队口径回退计划剂量（每人 2,560m / 360s）
@@ -3071,9 +3109,10 @@ async function finalize(code) {
     };
   })()`);
   assert(libDlg && libDlg.hasFmsYbt && libDlg.hasSysChecks && libDlg.hasCustomInput, '测试项目库弹窗：含 FMS/YBT 复合项 + 系统库多选 + 自定义添加');
-  // 添加自定义项目「握力」
+  // 添加自定义项目「握力」+ 勾选 FMS 复合项（新项目库默认空白，按需勾选）
   await evaluate(`(() => {
     const ov = [...document.querySelectorAll('.overlay')].pop();
+    ov.querySelector('.tlSpecial[value="fms"]').checked = true;
     ov.querySelector('#tlNewName').value = '握力';
     ov.querySelector('#tlNewUnit').value = 'kg';
     ov.querySelector('#tlNewUnit').dispatchEvent(new Event('input'));
@@ -3081,7 +3120,7 @@ async function finalize(code) {
     return 'ok';
   })()`);
   await sleep(200);
-  // 跑动计时类自定义项：单位 s 自动判为「越小越好」，并校验保存结果
+  // 跑动计时类自定义项：单位 s 自动判为「越小越好」，并校验保存结果（方向下拉已移除，行内为只读自动判定标签）
   const dirAuto = await evaluate(`(() => {
     const ov = [...document.querySelectorAll('.overlay')].pop();
     ov.querySelector('#tlNewName').value = '30m冲刺';
@@ -3090,10 +3129,10 @@ async function finalize(code) {
     ov.querySelector('#tlAddCustom').click();
     const rows = ov.querySelectorAll('#tlCustomList .tlCustomRow');
     const last = rows[rows.length - 1];
-    return { noTopDir: !ov.querySelector('#tlNewDir'), rows: rows.length, lastDir: last.querySelector('.tlCDir').value, lastName: last.querySelector('.tlCN').value };
+    return { noTopDir: !ov.querySelector('#tlNewDir'), noRowDir: !last.querySelector('.tlCDir'), rows: rows.length, lastDir: last.querySelector('.tlCDirTag').textContent.trim(), lastName: last.querySelector('.tlCN').value };
   })()`);
-  assert(dirAuto && dirAuto.noTopDir, '测试项目库弹窗添加行已移除方向下拉');
-  assert(dirAuto && dirAuto.lastDir === 'down', `计时类自定义项目单位 s 自动判为「越小越好」（${dirAuto && dirAuto.lastDir}）`);
+  assert(dirAuto && dirAuto.noTopDir && dirAuto.noRowDir, '测试项目库弹窗添加行已移除方向下拉');
+  assert(dirAuto && dirAuto.lastDir === '越小越好', `计时类自定义项目单位 s 自动判为「越小越好」（${dirAuto && dirAuto.lastDir}）`);
   await evaluate(`(() => { const ov = [...document.querySelectorAll('.overlay')].pop(); ov.querySelector('[data-ok]').click(); return 'ok'; })()`);
   await sleep(500);
   const dirSaved = await evaluate(`(() => {
@@ -3616,6 +3655,725 @@ async function finalize(code) {
   }
   const shot2 = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(path.join(SHOT_DIR, 'last-page.png'), Buffer.from(shot2.result.data, 'base64'));
+
+  // ================= Excel 测试数据导入向导（真实文件 + 四步向导 + 撤销） =================
+  {
+    const XLSX = require(path.join(ROOT, 'node_modules', 'xlsx'));
+    const athNames = await evaluate(`Store.data.athletes.slice(0,2).map(a=>a.name)`);
+    const n1 = athNames[0], n2 = athNames[1], newbie = '导入新人No1';
+    const aoa = [
+      ['XX 队 2026 年 10 月体测', null, null, null, null, null],
+      ['姓名', '测试日期', '30米', '纵跳', '专属项目X', '备注'],
+      [n1, '2026/10/1', '4.2', '60', '88', '正常'],
+      [n2, '2026/10/1', '4.5', '未测', '77', ''],
+      [newbie, '2026/10/1', '4.8', '55', '66', '新人'],
+      [n1, '2026/10/3', 'abc', '61', '90', '坏值行']
+    ];
+    const xlsxPath = path.join(require('os').tmpdir(), 'sharpfit-import-e2e.xlsx');
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '体测数据');
+    XLSX.writeFile(wb, xlsxPath);
+
+    await evaluate(`location.hash = "#/kpi"; window.dispatchEvent(new Event("hashchange")); "ok"`);
+    await sleep(700);
+    await evaluate(`Views.importTest.openManual(); "ok"`);
+    await evalWait(`document.querySelector('#impWrap') ? 1 : 0`, (v) => v === 1);
+
+    // CDP 注入文件
+    await send('DOM.enable');
+    const domDoc = await send('DOM.getDocument', { depth: 0 });
+    const fileNode = await send('DOM.querySelector', { nodeId: domDoc.result.root.nodeId, selector: '#impFile' });
+    await send('DOM.setFileInputFiles', { files: [xlsxPath], nodeId: fileNode.result.nodeId });
+    await evalWait(`document.querySelector('#impNext1') && !document.querySelector('#impNext1').disabled ? 1 : 0`, (v) => v === 1);
+    const sheetInfo = await evaluate(`(()=>({header:[...document.querySelectorAll('#impWrap .imp-grid tr:nth-child(3) td, #impWrap .imp-grid tr:nth-child(2) th')].length, has30:document.querySelector('#impWrap .imp-grid').textContent.includes('30米')}))()`);
+    assert(sheetInfo.has30, '导入步骤1：文件解析并预览（标题行+表头行识别）');
+
+    // 步骤2：默认映射（角色列 + 30米别名 + 纵跳固定字段 + 备注列自动忽略 + 专属项目新建）
+    await evaluate(`document.querySelector('#impNext1').click(); "ok"`);
+    await evalWait(`document.querySelector('#impWrap .imp-colmap') ? 1 : 0`, (v) => v === 1);
+    const mapping = await evaluate(`(()=>{
+      const get = (head)=>{ const tr=[...document.querySelectorAll('#impWrap tr[data-ci]')].find(t=>t.cells[0].textContent.trim()===head); return tr?{sel:tr.querySelector('.imp-colmap').value, unit:tr.querySelector('.imp-colunit').value}:null; };
+      return { name:document.querySelector('#impName').value, date:document.querySelector('#impDate').value,
+        m30:get('30米'), vj:get('纵跳'), mine:get('专属项目X'), remark:[...document.querySelectorAll('#impWrap tr[data-ci]')].some(t=>t.cells[0].textContent.trim()==='备注') };
+    })()`);
+    assert(mapping.name === '0' && mapping.date === '1', '导入步骤2：自动定位姓名列与日期列');
+    assert(mapping.m30 && /^n::30m冲刺$/.test(mapping.m30.sel), '导入步骤2：30米 自动别名到 30m冲刺');
+    assert(mapping.vj && mapping.vj.sel === 'f::verticalJump', '导入步骤2：纵跳映射到固定字段');
+    assert(mapping.mine && mapping.mine.sel === 'new', '导入步骤2：未知项目按列名新建自定义项目');
+    const remarkTr = [...await evaluate(`[...document.querySelectorAll('#impWrap tr[data-ci]')].filter(t=>t.cells[0].textContent.trim()==='备注').map(t=>t.querySelector('.imp-colmap').value)`)];
+    assert(remarkTr.length === 1 && remarkTr[0] === 'ignore', '导入步骤2：备注列（文字列）默认值为忽略');
+
+    // 步骤3：姓名对碰（两人自动匹配，一人新建）
+    await evaluate(`document.querySelector('#impNext2').click(); "ok"`);
+    await evalWait(`document.querySelector('#impWrap .imp-nmatch') ? 1 : 0`, (v) => v === 1);
+    const names = await evaluate(`[...document.querySelectorAll('#impWrap tr[data-nm]')].map(tr=>({nm:tr.dataset.nm, v:tr.querySelector('.imp-nmatch').value}))`);
+    const nNew = names.filter((x) => x.v === 'new' && x.nm === newbie).length;
+    const nMatch = names.filter((x) => x.v.startsWith('m:')).length;
+    assert(nNew === 1 && nMatch === 2, '导入步骤3：2 人自动匹配档案、1 人新建');
+
+    // 步骤4：预览汇总（8 数据点 / 1 新人 / 1 新自定义项 / 1 问题行）
+    await evaluate(`document.querySelector('#impNext3').click(); "ok"`);
+    await evalWait(`document.querySelector('#impDo') && !document.querySelector('#impDo').disabled ? 1 : 0`, (v) => v === 1);
+    const sum = await evaluate(`document.querySelector('#impWrap .imp-sum').textContent.replace(/\\s+/g,' ')`);
+    assert(/有效数据点 10/.test(sum) && /新建运动员 1 人/.test(sum) && /新建自定义项目 1 项/.test(sum) && /问题行 1/.test(sum),
+      '导入步骤4：预览汇总（10 数据点/1 新人/1 新项/1 问题行）实际：' + sum);
+
+    // 存模板后导入
+    await evaluate(`(()=>{const c=document.querySelector('#impSaveTpl'); c.checked=true; c.dispatchEvent(new Event('change')); const n=document.querySelector('#impTplName'); n.value='E2E模板'; n.dispatchEvent(new Event('input')); return 'ok';})()`);
+    await evaluate(`document.querySelector('#impDo').click(); "ok"`);
+    await evalWait(`document.querySelector('#impWrap') && document.querySelector('#impWrap').textContent.includes('导入完成') ? 1 : 0`, (v) => v === 1);
+
+    const verify = await evaluate(`(()=>{
+      const d=Store.data;
+      const a1=d.athletes.find(a=>a.name==='${n1}');
+      const pf=d.profiles.find(p=>p.athleteId===a1.id&&p.date==='2026-10-01');
+      return {
+        vj: pf && pf.verticalJump,
+        c30: pf && (pf.custom||[]).some(c=>c.name==='30m冲刺'&&c.value===4.2),
+        newAth: d.athletes.some(a=>a.name==='${newbie}'),
+        newItem: (d.settings.testItems||[]).some(t=>t.name==='专属项目X'),
+        batch: (d.importBatches||[]).length,
+        tpl: (d.settings.importTemplates||[]).length
+      };
+    })()`);
+    assert(verify.vj === 60 && verify.c30 === true, '导入入库：纵跳写入固定字段、30m冲刺写入自定义项目');
+    assert(verify.newAth === true && verify.newItem === true, '导入入库：新建运动员并登记自定义项目库');
+    assert(verify.batch === 1 && verify.tpl === 1, '导入台账与映射模板各 1 条');
+
+    // 撤销本批
+    await evaluate(`document.querySelector('#impUndo').click(); "ok"`);
+    await sleep(300);
+    await evaluate(`document.querySelector('.overlay:not(#impWrap) [data-ok]').click(); "ok"`);
+    await evalWait(`document.querySelector('#impWrap') ? 0 : 1`, (v) => v === 1);
+    const afterUndo = await evaluate(`(()=>{
+      const d=Store.data;
+      return {
+        newGone: !d.athletes.some(a=>a.name==='${newbie}'),
+        pfGone: d.profiles.filter(p=>p.date==='2026-10-01'||p.date==='2026-10-03').length===0,
+        batchGone: (d.importBatches||[]).length===0,
+        tplKept: (d.settings.importTemplates||[]).length===1
+      };
+    })()`);
+    assert(afterUndo.newGone && afterUndo.pfGone && afterUndo.batchGone, '整批撤销：新增运动员/档案/批次全部回滚 ' + JSON.stringify(afterUndo));
+    assert(afterUndo.tplKept, '撤销后映射模板保留');
+    try { fs.unlinkSync(xlsxPath); } catch (e) {}
+  }
+
+  // ================= 全自动导入：选文件即识别+入库，全程零点击 =================
+  {
+    const XLSX = require(path.join(ROOT, 'node_modules', 'xlsx'));
+    const athNames = await evaluate(`Store.data.athletes.slice(0,1).map(a=>a.name)`);
+    const n1 = athNames[0], newbie = '自动导入新人Auto';
+    // 标题行 + 表头行的宽表（与手动用例同款排版），验证无需任何设置即识别
+    const aoa = [
+      ['自动导入测试表', null, null, null],
+      ['姓名', '测试日期', '纵跳', '备注'],
+      [n1, '2026/10/5', '63', 'ok'],
+      [newbie, '2026/10/5', '57', '新人']
+    ];
+    const xlsxPath2 = path.join(require('os').tmpdir(), 'sharpfit-auto-import-e2e.xlsx');
+    const wb2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb2, XLSX.utils.aoa_to_sheet(aoa), '成绩');
+    XLSX.writeFile(wb2, xlsxPath2);
+
+    await evaluate(`Views.importTest.open(); "ok"`);
+    await evalWait(`document.querySelector('#impAutoFile') ? 1 : 0`, (v) => v === 1);
+    // 注入文件后不做任何点击：应直接识别并入账
+    const autoDoc = await send('DOM.getDocument', { depth: 0 });
+    const autoNode = await send('DOM.querySelector', { nodeId: autoDoc.result.root.nodeId, selector: '#impAutoFile' });
+    await send('DOM.setFileInputFiles', { files: [xlsxPath2], nodeId: autoNode.result.nodeId });
+    await evalWait(`document.querySelector('#impAutoDone') ? 1 : 0`, (v) => v === 1, 9000);
+    const doneTxt = await evaluate(`document.querySelector('#impAutoDone').textContent.replace(/\\s+/g,' ')`);
+
+    const autoVerify = await evaluate(`(()=>{
+      const d=Store.data;
+      const a1=d.athletes.find(a=>a.name==='${n1}');
+      const pf=d.profiles.find(p=>p.athleteId===a1.id&&p.date==='2026-10-05');
+      return {
+        pfVj: pf && pf.verticalJump,
+        newAth: d.athletes.some(a=>a.name==='${newbie}'),
+        batches: (d.importBatches||[]).length
+      };
+    })()`);
+    assert(autoVerify.pfVj === 63, '全自动导入：纵跳直接写入档案（零点击）实际：' + JSON.stringify(autoVerify) + ' | ' + doneTxt.slice(0, 80));
+    assert(autoVerify.newAth === true && autoVerify.batches === 1, '全自动导入：自动新建运动员并生成 1 条台账');
+
+    // 完成弹窗一键撤销
+    await evaluate(`document.querySelector('#impAutoDone [data-adundo]').click(); "ok"`);
+    await sleep(300);
+    await evaluate(`document.querySelector('.overlay:not(#impAutoDone) [data-ok]').click(); "ok"`);
+    await sleep(400);
+    const autoAfterUndo = await evaluate(`(()=>({
+      newGone: !Store.data.athletes.some(a=>a.name==='${newbie}'),
+      pfGone: !Store.data.profiles.some(p=>p.date==='2026-10-05'),
+      batchGone: (Store.data.importBatches||[]).length===0,
+      doneClosed: !document.querySelector('#impAutoDone')
+    }))()`);
+    assert(autoAfterUndo.newGone && autoAfterUndo.pfGone && autoAfterUndo.batchGone && autoAfterUndo.doneClosed,
+      '全自动导入：弹窗一键撤销全部回滚 ' + JSON.stringify(autoAfterUndo));
+    try { fs.unlinkSync(xlsxPath2); } catch (e) {}
+  }
+
+  // ================= 09 设置页：外观背景 / 数据备份 / 通用 / 关于 =================
+  {
+    await evaluate(`location.hash = "#/settings"; window.dispatchEvent(new Event("hashchange")); "ok"`);
+    await sleep(500);
+    const stOpen = await evaluate(`(()=>{
+      const w=document.querySelector('#view');
+      return {
+        navItem: !!document.querySelector('.nav-item[data-id="settings"]'),
+        gear: !!document.getElementById('navSettings'),
+        tabs: [...w.querySelectorAll('.st-tab')].map(t=>t.textContent.trim()),
+        bgmOpts: w.querySelectorAll('[data-bgm]').length,
+        accents: w.querySelectorAll('[data-accent]').length,
+        density: w.querySelectorAll('[data-density]').length
+      };
+    })()`);
+    assert(!stOpen.navItem && stOpen.gear && stOpen.tabs.join('/') === '外观/数据与备份/通用/使用手册/关于', '设置页：导航不含设置项，左下角齿轮入口存在 + 五个分区 tab（含使用手册）' + JSON.stringify(stOpen.tabs));
+    assert(stOpen.bgmOpts === 3 && stOpen.accents === 5 && stOpen.density === 2, '设置页：3 种背景 / 5 种强调色 / 2 档密度');
+
+    // 侧栏左下角：齿轮设置入口（替代版本文字）；主导航不再有「设置」项
+    const footGone = await evaluate(`({ demo: !!document.getElementById('loadDemo'), dev: !!document.getElementById('contactDev'), ver: !!document.querySelector('.side-foot .ver'), gearTxt: (document.getElementById('navSettings')||{}).textContent ? document.getElementById('navSettings').textContent.trim() : '' })`);
+    assert(!footGone.demo && !footGone.dev && !footGone.ver && footGone.gearTxt.includes('设置'), '侧栏：版本文字已删除，左下角为齿轮设置入口');
+
+    // 明暗模式：切浅色 → html/body 属性 + 背景变量明显变亮 + 映射变量（--bg2）同步变浅 + 持久化；切回深色
+    const darkBg = await evaluate(`getComputedStyle(document.body).getPropertyValue('--color-background').trim()`);
+    await evaluate(`document.querySelector('.st-seg-btn[data-theme="light"]').click(); "ok"`);
+    await sleep(300);
+    const lightSt = await evaluate(`({
+      htmlTheme: document.documentElement.dataset.theme,
+      bodyTheme: document.body.dataset.theme,
+      persisted: Store.data.settings.appearance.theme,
+      bg: getComputedStyle(document.body).getPropertyValue('--color-background').trim(),
+      bg2: getComputedStyle(document.body).getPropertyValue('--bg2').trim(),
+      segOn: document.querySelector('.st-seg-btn[data-theme="light"]').classList.contains('on')
+    })`);
+    assert(lightSt.htmlTheme === 'light' && lightSt.bodyTheme === 'light' && lightSt.persisted === 'light' && lightSt.bg !== darkBg && lightSt.segOn,
+      '外观：浅色模式生效并持久化 ' + JSON.stringify(lightSt));
+    assert(lightSt.bg2 && lightSt.bg2 !== 'oklch(17% 0.018 264)',
+      '外观：浅色下映射变量 --bg2 同步解析为浅色（修复黑色残留）=' + lightSt.bg2);
+    // 浅色下星空仍是 canvas（星色已自动适配），随后切回深色
+    await evaluate(`document.querySelector('.st-seg-btn[data-theme="dark"]').click(); "ok"`);
+    await sleep(300);
+    const darkBack = await evaluate(`({ theme: document.body.dataset.theme, bg: getComputedStyle(document.body).getPropertyValue('--color-background').trim() })`);
+    assert(darkBack.theme === 'dark' && darkBack.bg === darkBg, '外观：切回深色模式 ' + JSON.stringify(darkBack));
+
+    // 项目库：数值方向下拉已移除，按单位自动判定（计时单位→越小越好，其余→越大越好）
+    await evaluate(`Views.profile.testLibDialog(); "ok"`);
+    await sleep(300);
+    const libDir = await evaluate(`(()=>{
+      const ov=[...document.querySelectorAll('.overlay')].pop();
+      const noSelect = !ov.querySelector('.tlCDir');
+      // 已保存自定义行带只读方向标签
+      ov.querySelector('#tlNewName').value='e2e冲刺';
+      ov.querySelector('#tlNewUnit').value='s';
+      ov.querySelector('#tlAddCustom').click();
+      const row=[...ov.querySelectorAll('.tlCustomRow')].pop();
+      const tagTimed = row.querySelector('.tlCDirTag').textContent.trim();
+      // 单位改成 kg → 标签实时变为越大越好
+      const u=row.querySelector('.tlCU'); u.value='kg'; u.dispatchEvent(new Event('input',{bubbles:true}));
+      const tagKg = row.querySelector('.tlCDirTag').textContent.trim();
+      ov.querySelector('[data-x]').click();
+      return { noSelect, tagTimed, tagKg };
+    })()`);
+    assert(libDir.noSelect && libDir.tagTimed === '越小越好' && libDir.tagKg === '越大越好',
+      '项目库：方向下拉已删除，按单位自动判定（s→越小越好 / kg→越大越好）' + JSON.stringify(libDir));
+
+    // 背景切星空 → body 属性 + 星点 canvas
+    await evaluate(`document.querySelector('[data-bgm="starfield"]').click(); "ok"`);
+    await sleep(400);
+    const stars = await evaluate(`({ bgm: document.body.dataset.bgm, canvas: !!document.querySelector('#bgStars'), persisted: Store.data.settings.appearance.bgm })`) ;
+    assert(stars.bgm === 'starfield' && stars.canvas && stars.persisted === 'starfield', '外观：星空模式生效（清晰星点 canvas 已挂载并持久化）' + JSON.stringify(stars));
+
+    // 强调色切玫红
+    await evaluate(`document.querySelector('[data-accent="rose"]').click(); "ok"`);
+    await sleep(100);
+    const rose = await evaluate(`({ volt: getComputedStyle(document.documentElement).getPropertyValue('--volt').trim(), saved: Store.data.settings.appearance.accent })`) ;
+    assert(rose.volt.toLowerCase() === '#ff6f91' && rose.saved === 'rose', '外观：强调色切换为玫红并生效' + JSON.stringify(rose));
+
+    // 紧凑密度
+    await evaluate(`document.querySelector('[data-density="compact"]').click(); "ok"`);
+    await sleep(100);
+    const compact = await evaluate(`document.body.dataset.density`);
+    assert(compact === 'compact', '外观：紧凑密度生效');
+
+    // 数据与备份分区
+    await evaluate(`[...document.querySelectorAll('.st-tab')].find(t=>t.textContent.includes('数据与备份')).click(); "ok"`);
+    await sleep(300);
+    const dataTab = await evaluate(`(()=>({
+      stats: document.querySelectorAll('.st-stat').length,
+      autoBak: !!document.querySelector('#stAutoBak'),
+      bakBtns: ['#stBakNow','#stBakDownload','#stBakFolder','#stRestore','#stWipe'].every(s=>!!document.querySelector(s))
+    }))()`);
+    assert(dataTab.stats === 6 && dataTab.autoBak && dataTab.bakBtns, '数据与备份：6 项数据概况 + 自动备份开关 + 备份/恢复/清空按钮 ' + JSON.stringify(dataTab));
+
+    // 计划数据包：入口存在 → 导出 → 作为新计划导入（全新 id、不覆盖本机数据）→ 清理还原
+    const packUI = await evaluate(`({ exp: !!document.querySelector('#stPackExport'), imp: !!document.querySelector('#stPackImport') })`);
+    assert(packUI.exp && packUI.imp, '计划数据包：导出/导入入口存在');
+    const packTest = await evaluate(`(()=>{
+      const macId = Store.data.settings.activeMacroId;
+      const pack = Store.exportPlan(macId);
+      if (!pack || pack.type !== 'sharpfit-plan-pack') return { fail: 'exportPlan 返回无效' };
+      const before = { macros: Store.data.macros.length, aths: Store.data.athletes.length, exs: Store.data.exercises.length };
+      const libOk = !!(pack.library && pack.library.exercises.length === before.exs);
+      const r = Store.importPlan(JSON.stringify(pack));
+      if (!r.ok) return { fail: 'importPlan 校验失败: ' + r.msg };
+      const done = r.apply();
+      const d = Store.data;
+      const nm = d.macros.find(m => m.id === done.macroId);
+      const newAths = d.athletes.filter(a => a.macroId === done.macroId);
+      const out = {
+        libOk,
+        sameName: nm && nm.name === pack.macros[0].name,
+        newId: done.macroId !== macId,
+        activeSet: d.settings.activeMacroId === done.macroId,
+        macroAdded: d.macros.length === before.macros + 1,
+        athCountSame: newAths.length === pack.athletes.length,
+        athNewIds: newAths.every(a => !pack.athletes.some(pa => pa.id === a.id)),
+        profilesCopied: d.profiles.filter(p => newAths.some(a => a.id === p.athleteId)).length >= pack.profiles.length,
+        exNoDup: d.exercises.length === before.exs
+      };
+      // 清理：移除导入的计划及其运动员，还原 activeMacroId
+      d.macros = d.macros.filter(m => m.id !== done.macroId);
+      d.athletes = d.athletes.filter(a => a.macroId !== done.macroId);
+      const keep = new Set(d.athletes.map(a => a.id));
+      d.profiles = d.profiles.filter(p => keep.has(p.athleteId));
+      d.tests = d.tests.filter(t => keep.has(t.athleteId));
+      d.loadEntries = d.loadEntries.filter(l => keep.has(l.athleteId));
+      d.settings.activeMacroId = macId;
+      Store.save();
+      return out;
+    })()`);
+    assert(packTest && !packTest.fail && packTest.libOk && packTest.sameName && packTest.newId && packTest.activeSet && packTest.macroAdded && packTest.athCountSame && packTest.athNewIds && packTest.exNoDup,
+      '计划数据包：导出→导入为新独立计划（全新 id、共享库去重、导入后可直接展示）' + JSON.stringify(packTest));
+
+    // 自动备份开关（开→关，保持默认关闭，避免测试后留存备份文件）
+    await evaluate(`const c=document.querySelector('#stAutoBak'); if(c.checked) c.click(); "ok"`);
+    await sleep(100);
+    const autoOff = await evaluate(`Store.data.settings.autoBackup !== true`);
+    assert(autoOff === true, '自动备份开关可切换');
+
+    // 清空防误触：必须输入「清空」按钮才可点；取消后不影响数据
+    const beforeAths = await evaluate(`Store.data.athletes.length`);
+    await evaluate(`document.querySelector('#stWipe').click(); "ok"`);
+    await sleep(300);
+    const wipeGuard = await evaluate(`(()=>{
+      const ov=[...document.querySelectorAll('.overlay')].pop();
+      const inp=ov.querySelector('#stWipeInput'), ok=ov.querySelector('#stWipeOk');
+      const before=ok.disabled;
+      inp.value='删除'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+      const wrong=ok.disabled;
+      inp.value='清空'; inp.dispatchEvent(new Event('input',{bubbles:true}));
+      const right=ok.disabled;
+      ov.querySelector('[data-x]').click();
+      return {before, wrong, right};
+    })()`);
+    assert(wipeGuard.before === true && wipeGuard.wrong === true && wipeGuard.right === false,
+      '清空数据：需输入「清空」确认词解锁按钮（防误触）' + JSON.stringify(wipeGuard));
+    const afterCancel = await evaluate(`Store.data.athletes.length`);
+    assert(afterCancel === beforeAths, '取消清空后数据不变');
+
+    // 数据层 reset/replace 往返（不走 UI reload，避免中断 CDP）
+    const snap = await evaluate(`JSON.stringify(Store.data)`);
+    await evaluate(`Store.resetAll(); "ok"`);
+    const wiped = await evaluate(`({ aths: Store.data.athletes.length, macros: Store.data.macros.length, profiles: Store.data.profiles.length })`);
+    assert(wiped.aths === 0 && wiped.macros === 0 && wiped.profiles === 0, 'resetAll：数据回到出厂空白 ' + JSON.stringify(wiped));
+    await evaluate(`Store.replaceAll(JSON.parse(${JSON.stringify(snap)})); "ok"`);
+    const restored = await evaluate(`Store.data.athletes.length`);
+    assert(restored === beforeAths, 'replaceAll：备份恢复后数据完整');
+
+    // 通用分区：启动页分段 + 测试项目库弹窗
+    await evaluate(`[...document.querySelectorAll('.st-tab')].find(t=>t.textContent.includes('通用')).click(); "ok"`);
+    await sleep(300);
+    await evaluate(`document.querySelector('#stTestLib').click(); "ok"`);
+    await sleep(300);
+    const libM = await evaluate(`(()=>{
+      const ov=[...document.querySelectorAll('.overlay')].pop();
+      const ok=!!ov && ov.querySelector('.modal-head h3').textContent.includes('体能测试项目库');
+      if(ov) ov.querySelector('[data-x]').click();
+      return ok;
+    })()`);
+    assert(libM === true, '通用：可打开体能测试项目库管理弹窗');
+
+    // 关于分区：版本号异步填充 + 联系开发者二维码
+    await evaluate(`[...document.querySelectorAll('.st-tab')].find(t=>t.textContent.includes('关于')).click(); "ok"`);
+    await sleep(300);
+    const verOk = await evalWait(`/^v/.test(document.querySelector('#stVer').textContent) ? 1 : 0`, (v) => v === 1, 4000);
+    assert(verOk === 1, '关于：显示应用版本号');
+    await evaluate(`document.querySelector('#stContact').click(); "ok"`);
+    await sleep(300);
+    const qr = await evaluate(`(()=>{
+      const ov=[...document.querySelectorAll('.overlay')].pop();
+      const img=ov && ov.querySelector('img[src*="developer-qr"]');
+      const title=ov && ov.querySelector('.modal-head h3').textContent.includes('联系开发者');
+      if(ov) ov.querySelector('[data-x]').click();
+      return !!(img && title);
+    })()`);
+    assert(qr === true, '关于：联系开发者弹窗（二维码）');
+    // 关于页「打开数据文件夹」已删除
+    const openDataGone = await evaluate(`!document.querySelector('#stOpenData')`);
+    assert(openDataGone === true, '关于：打开数据文件夹按钮已删除');
+
+    // 使用手册：5 个分区 tab、章节结构与关键内容
+    await evaluate(`[...document.querySelectorAll('.st-tab')].find(t=>t.textContent.includes('使用手册')).click(); "ok"`);
+    await sleep(300);
+    const man = await evaluate(`(()=>{
+      const w=document.querySelector('#view');
+      const secs=[...w.querySelectorAll('details.st-man')];
+      const texts=secs.map(s=>s.querySelector('summary b').textContent);
+      const quick=secs[0];
+      const steps=quick?quick.querySelectorAll('ol li').length:0;
+      const exportSteps=[...w.querySelectorAll('.st-man-b li')].filter(li=>li.textContent.includes('另存为')).length;
+      return { n: secs.length, texts, steps, exportSteps, hasPack: w.textContent.includes('计划数据包'), hasBackup: w.textContent.includes('恢复备份') };
+    })()`);
+    assert(man.n >= 11 && man.steps === 6 && man.hasPack && man.hasBackup,
+      `使用手册：${man.n} 个章节，快速上手 6 步，覆盖计划数据包/备份恢复 ` + JSON.stringify(man.texts));
+    assert(man.exportSteps >= 1, '使用手册：导出说明含「另存为」选路径');
+
+    // 外观还原为默认（纯色/荧光绿/舒适），避免影响后续
+    await evaluate(`(()=>{
+      document.querySelector('.st-tab[data-tab="appearance"]').click();
+      return 'ok';
+    })()`);
+    await sleep(300);
+    await evaluate(`document.querySelector('[data-bgm="solid"]').click(); document.querySelector('[data-accent="volt"]').click(); document.querySelector('[data-density="cozy"]').click(); "ok"`);
+    await sleep(200);
+    const backDefault = await evaluate(`({ bgm: document.body.dataset.bgm, density: document.body.dataset.density, canvasGone: !document.querySelector('#bgStars') })`);
+    assert(backDefault.bgm === 'solid' && backDefault.density === 'cozy' && backDefault.canvasGone, '外观还原默认 ' + JSON.stringify(backDefault));
+  }
+
+  // ================= 团队运动：运动员位置下拉（替代备注） =================
+  {
+    const demoMacId = await evaluate(`Store.data.settings.activeMacroId`);
+    await evaluate('location.hash = "#/profile"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(700);
+
+    // 团队项目（篮球）：建档弹窗含位置下拉，5 个标准位置 + 空选项 + 自定义
+    await evaluate(`document.querySelector('#profAthAdd').click(); "ok"`);
+    await evalWait(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      return !!(ov && ov.querySelector('#fPos') && ov.querySelector('#fName') && ov.querySelector('[data-ok]').onclick);
+    })()`, (v) => v === true);
+    const posDlg = await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const sel = ov.querySelector('#fPos');
+      if (!sel) return { fail: '无 #fPos' };
+      return {
+        opts: [...sel.options].map((o) => o.value),
+        texts: [...sel.options].map((o) => o.textContent.trim()),
+        customWrapHidden: ov.querySelector('#fPosCustomWrap').style.display === 'none',
+        hasNote: !!ov.querySelector('#fNote')
+      };
+    })()`);
+    assert(posDlg && !posDlg.fail && posDlg.opts.length === 7,
+      '团队项目：建档弹窗出现位置下拉（空+5位置+自定义，共 7 项）' + JSON.stringify(posDlg && posDlg.opts));
+    assert(posDlg && posDlg.opts.includes('中锋') && posDlg.texts.includes('控球后卫') && posDlg.customWrapHidden && posDlg.hasNote,
+      '团队项目：位置枚举完整，默认收起自定义输入框，备注字段保留 ' + JSON.stringify(posDlg && posDlg.texts));
+
+    // 选标准位置保存 → athlete.position 落库；头部出现位置 chip
+    await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      ov.querySelector('#fName').value = '位置测试甲';
+      ov.querySelector('#fPos').value = '中锋';
+      ov.querySelector('#fPos').dispatchEvent(new Event('change', { bubbles: true }));
+      ov.querySelector('[data-ok]').click();
+      return 'ok';
+    })()`);
+    await sleep(500);
+    const posSaved = await evaluate(`(() => {
+      const a = Store.data.athletes.find((x) => x.name === '位置测试甲');
+      return a ? { position: a.position, chip: [...document.querySelectorAll('#profAthBar .chip')].some((c) => c.textContent.trim() === '中锋') } : null;
+    })()`);
+    assert(posSaved && posSaved.position === '中锋' && posSaved.chip, '选择位置保存后 position 落库并在档案头部显示位置标签 ' + JSON.stringify(posSaved));
+
+    // 编辑回显 + 自定义位置兜底
+    await evaluate(`document.querySelector('#profAthEdit').click(); "ok"`);
+    await evalWait(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      return !!(ov && ov.querySelector('#fPos') && ov.querySelector('#fPos').value === '中锋' && ov.querySelector('[data-ok]').onclick);
+    })()`, (v) => v === true);
+    const posCustom = await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const echo = ov.querySelector('#fPos').value;
+      const sel = ov.querySelector('#fPos');
+      sel.value = '__custom__'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const wrapShown = ov.querySelector('#fPosCustomWrap').style.display !== 'none';
+      ov.querySelector('#fPosCustom').value = '双能卫';
+      ov.querySelector('[data-ok]').click();
+      return { echo, wrapShown };
+    })()`);
+    await sleep(500);
+    const posCustomSaved = await evaluate(`Store.data.athletes.find(x=>x.name==='位置测试甲').position`);
+    assert(posCustom && posCustom.echo === '中锋' && posCustom.wrapShown && posCustomSaved === '双能卫',
+      '位置编辑回显标准值，可改为自定义位置并保存 ' + JSON.stringify({ ...posCustom, saved: posCustomSaved }));
+
+    // 清理：移除测试运动员
+    await evaluate(`(() => {
+      Store.data.athletes = Store.data.athletes.filter((a) => a.name !== '位置测试甲');
+      Store.save(); Views.profile.mount(document.querySelector('#view')); return 'ok';
+    })()`);
+    await sleep(300);
+
+    // 个人项目（力量训练）：新建临时计划 → 建档弹窗无位置字段 → 清理还原
+    const soloCheck = await evaluate(`(() => {
+      const macId = 'mac-e2e-solo';
+      Store.data.macros.push({ id: macId, name: 'e2e个人项目计划', sportCat: '体能与健身', sport: '力量训练', model: '',
+        startDate: '2026-01-01', endDate: '2026-06-30', compDates: [], testDates: [] });
+      Store.data.settings.activeMacroId = macId;
+      Store.save();
+      return macId;
+    })()`);
+    await evaluate('location.hash = "#/profile"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(700);
+    await evaluate(`document.querySelector('#profAthAdd').click(); "ok"`);
+    await evalWait(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      return !!(ov && !ov.querySelector('#fPos') && ov.querySelector('#fName') && ov.querySelector('[data-ok]').onclick);
+    })()`, (v) => v === true);
+    const soloDlg = await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const noPos = !ov.querySelector('#fPos');
+      ov.querySelector('#fName').value = '个人项目测试乙';
+      ov.querySelector('[data-ok]').click();
+      return noPos;
+    })()`);
+    await sleep(500);
+    const soloAth = await evaluate(`Store.data.athletes.find(x=>x.name==='个人项目测试乙')`);
+    assert(soloDlg === true && soloAth && soloAth.position === '', '个人项目：建档弹窗不显示位置字段，运动员 position 留空 ' + JSON.stringify(soloAth));
+    await evaluate(`(() => {
+      Store.data.athletes = Store.data.athletes.filter((a) => a.name !== '个人项目测试乙');
+      Store.data.macros = Store.data.macros.filter((m) => m.id !== 'mac-e2e-solo');
+      Store.data.settings.activeMacroId = ${JSON.stringify(demoMacId)};
+      Store.save();
+      return 'ok';
+    })()`);
+    await evaluate('location.hash = "#/profile"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(500);
+  }
+
+  // ================= KPI 实验室：位置下拉筛选（内置计划每人自带标准位置，默认全部位置） =================
+  {
+    // 内置示例 15 人：每名队员均有标准位置，5 个位置各 3 人（队中另有测试新建的无位置队员不影响）
+    const seedPos = await evaluate(`(() => {
+      const mac = Store.activeMacro();
+      const aths = Store.data.athletes.filter((a) => a.macroId === mac.id);
+      const std = ['控球后卫', '得分后卫', '小前锋', '大前锋', '中锋'];
+      const groups = {};
+      std.forEach((p) => { groups[p] = aths.filter((a) => a.position === p).map((a) => a.name); });
+      return { n: aths.length, stdN: aths.filter((a) => std.includes(a.position)).length, noneN: aths.filter((a) => !a.position).length, groups };
+    })()`);
+    assert(seedPos && seedPos.stdN === 15
+      && ['控球后卫', '得分后卫', '小前锋', '大前锋', '中锋'].every((p) => seedPos.groups[p].length === 3),
+      '内置示例计划：15 名队员位置齐全，5 个标准位置各 3 人 ' + JSON.stringify(seedPos && seedPos.groups));
+
+    await evaluate(`Views.kpiLab.open(); "ok"`);
+    await sleep(600);
+    const posOpts = await evalWait(`(() => {
+      const row = document.querySelector('#klPosRow');
+      const sel = document.querySelector('#klPosSel');
+      if (!row || row.style.display === 'none' || !sel) return null;
+      return { vals: [...sel.options].map((o) => o.value), def: sel.value, hint: row.textContent, noneOpt: [...sel.options].some((o) => o.value === '__none__') };
+    })()`, (v) => v && v.vals.includes('控球后卫') && v.vals.includes('中锋'));
+    assert(posOpts && posOpts.def === '' && posOpts.vals[0] === ''
+      && ['控球后卫', '得分后卫', '小前锋', '大前锋', '中锋'].every((p) => posOpts.vals.includes(p))
+      && posOpts.noneOpt === (seedPos.noneN > 0) && posOpts.hint.includes('全部位置'),
+      'KPI 实验室：位置为下拉菜单，默认全部位置（标准5位置；有无位置队员时才出现未设置项）' + JSON.stringify(posOpts));
+
+    // 选「控球后卫」→ 姓名区只剩该位置 3 名队员且自动全选
+    await evaluate(`(() => {
+      const sel = document.querySelector('#klPosSel');
+      sel.value = '控球后卫'; sel.dispatchEvent(new Event('change'));
+      return 'ok';
+    })()`);
+    await sleep(300);
+    const filtered = await evaluate(`(() => [...document.querySelectorAll('#klAths [data-ath]')].map((c) => c.textContent.trim()))()`);
+    const expectPg = seedPos.groups['控球后卫'];
+    assert(filtered.length === 3 && expectPg.every((n) => filtered.includes(n)),
+      `位置下拉：姓名区只剩控球后卫 3 人（${expectPg.join('/')}）实际 ${JSON.stringify(filtered)}`);
+    const pgOn = await evaluate(`[...document.querySelectorAll('#klAths [data-ath]')].every((c) => c.classList.contains('on'))`);
+    assert(pgOn === true, '选择位置后该位置队员自动全部选中');
+
+    // 清空/全选仅作用于当前位置范围（3 人）
+    await evaluate(`document.querySelector('#klAthNone').click(); "ok"`);
+    await sleep(200);
+    const on0 = await evaluate(`document.querySelectorAll('#klAths [data-ath].on').length`);
+    assert(on0 === 0, '位置筛选后「清空」只清空当前位置范围');
+    await evaluate(`document.querySelector('#klAthAll').click(); "ok"`);
+    await sleep(200);
+    const on3 = await evaluate(`document.querySelectorAll('#klAths [data-ath].on').length`);
+    assert(on3 === 3, '位置筛选后「全选」只选当前位置范围队员（3 人）');
+
+    // 选回「全部位置」→ 全部队员重新出现
+    await evaluate(`(() => {
+      const sel = document.querySelector('#klPosSel');
+      sel.value = ''; sel.dispatchEvent(new Event('change'));
+      return 'ok';
+    })()`);
+    await sleep(300);
+    const allN = await evaluate(`document.querySelectorAll('#klAths [data-ath]').length`);
+    assert(allN === seedPos.n, `位置下拉：选回全部位置，${seedPos.n} 名队员全部出现，实际 ${allN}`);
+
+    await evaluate(`document.querySelector('#klClose').click(); "ok"`);
+    await sleep(300);
+  }
+
+  // ================= 设置：三语切换（简体/繁體/English，无刷新切换） =================
+  {
+    await evaluate('location.hash = "#/settings"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(600);
+    await evaluate(`document.querySelector('.st-tab[data-tab="general"]').click(); "ok"`);
+    await sleep(300);
+    const langBtns = await evaluate(`[...document.querySelectorAll('[data-loc]')].map((b) => b.dataset.loc)`);
+    assert(JSON.stringify(langBtns) === JSON.stringify(['zh-CN', 'zh-TW', 'en']), '通用设置：三个语言分段按钮（简/繁/英）' + JSON.stringify(langBtns));
+    const zhNav = await evaluate(`document.getElementById('pageTitle').textContent.trim()`);
+    assert(zhNav.endsWith('设置'), '简体模式：导航为「设置」（实际 ' + zhNav + '）');
+
+    // 切英文 → 无刷新重渲染（不 reload）：打标记验证页面未被重载
+    await evaluate(`window.__noReload = 42; try { I18n.setLocale('en'); } catch (e) {} "ok"`);
+    const enSt = await evalWait(`({
+      lang: document.documentElement.lang,
+      loc: I18n.locale,
+      persisted: Store.data.settings.locale,
+      nav: document.getElementById('pageTitle').textContent.trim(),
+      navAth: document.querySelector('.nav-item[data-id="profile"]').textContent.trim(),
+      mark: window.__noReload || 0,
+      gear: (document.querySelector('#navSettings .side-gear-t') || {}).textContent || ''
+    })`, (v) => v && v.loc === 'en' && /[A-Za-z]$/.test(v.nav) && v.nav.endsWith('Settings'), 12000);
+    assert(enSt && enSt.lang === 'en' && enSt.persisted === 'en' && enSt.nav.endsWith('Settings') && enSt.navAth.endsWith('Athletes'),
+      'English：界面切英文并持久化 ' + JSON.stringify(enSt));
+    assert(enSt && enSt.mark === 42 && enSt.gear === 'Settings',
+      'English：切换无刷新（页面未重载）、左下角齿轮文案同步' + JSON.stringify({ mark: enSt && enSt.mark, gear: enSt && enSt.gear }));
+
+    // 英文模式下：周期总表训练目标分类全量翻译（截图中曾残留的「代谢Training/技/战术/Recovery与再生」等；
+    // 分类名/训练量/准备水平行渲染在周期总表页，中周期页只显示目标名 chips）
+    await evaluate('location.hash = "#/macro"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(700);
+    const enMeso = await evaluate(`(() => {
+      const t = document.body.textContent;
+      return { metab: t.includes('Metabolic Conditioning'), tech: t.includes('Technique/Tactics'),
+        recovery: t.includes('Recovery & Regeneration'), psych: t.includes('Psychology & Cognition'),
+        nutri: t.includes('Nutrition'), volume: t.includes('Volume'), readiness: t.includes('Readiness'),
+        noResidue: !t.includes('代谢Training') && !t.includes('Recovery与再生') };
+    })()`);
+    assert(enMeso && enMeso.metab && enMeso.tech && enMeso.recovery && enMeso.psych && enMeso.nutri && enMeso.volume && enMeso.readiness && enMeso.noResidue,
+      'English：周期总表训练目标分类全量翻译（代谢/技战术/恢复再生/心理/营养/训练量/准备水平）' + JSON.stringify(enMeso));
+
+    // 英文模式下：设置页各页签骨架翻译（页签点击为内部重挂载，翻译由 MutationObserver 在下一帧绘制前完成，需等一帧再读取）
+    await evaluate('location.hash = "#/settings"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(600);
+    const enSettings = { okAp: false, okDt: false, okGn: false };
+    await evaluate(`document.querySelector('.st-tab[data-tab="appearance"]').click(); "ok"`);
+    await sleep(350);
+    enSettings.okAp = await evaluate(`(() => { const ap = document.body.textContent;
+      return ap.includes('Theme') && ap.includes('Accent Color') && ap.includes('Background Dim') && ap.includes('Volt'); })()`);
+    await evaluate(`document.querySelector('.st-tab[data-tab="data"]').click(); "ok"`);
+    await sleep(350);
+    enSettings.okDt = await evaluate(`(() => { const dt = document.body.textContent;
+      return dt.includes('Data Overview') && dt.includes('Danger Zone') && dt.includes('Plan Package') && dt.includes('Backup & Restore'); })()`);
+    await evaluate(`document.querySelector('.st-tab[data-tab="general"]').click(); "ok"`);
+    await sleep(350);
+    enSettings.okGn = await evaluate(`(() => { const gn = document.body.textContent;
+      return gn.includes('Language') && gn.includes('Test Item Library') && gn.includes('Sample Data'); })()`);
+    assert(enSettings && enSettings.okAp && enSettings.okDt && enSettings.okGn,
+      'English：设置页外观/数据/通用页签全量翻译' + JSON.stringify(enSettings));
+
+    // 英文模式下拉枚举：显示翻译、value 仍为中文原枚举（表单取值不被破坏）
+    await evaluate('location.hash = "#/profile"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(700);
+    await evaluate(`document.querySelector('#profAthAdd').click(); "ok"`);
+    await evalWait(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const pos = ov && ov.querySelector('#fPos');
+      return !!(pos && [...pos.options].some((o) => o.value === '中锋' && o.textContent.trim() === 'Center'));
+    })()`, (v) => v === true);
+    const enSelect = await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const pos = [...ov.querySelector('#fPos').options].find((o) => o.value === '中锋');
+      const gender = ov.querySelector('#fGender');
+      const r = { posText: pos ? pos.textContent.trim() : null, posValue: pos ? pos.value : null,
+        genderText: gender.options[gender.selectedIndex >= 0 ? gender.selectedIndex : 0].textContent.trim(),
+        genderValue: gender.value,
+        posCount: [...ov.querySelector('#fPos').options].filter((o) => o.value).length };
+      ov.querySelector('[data-x]').click();
+      return r;
+    })()`);
+    assert(enSelect && enSelect.posText === 'Center' && enSelect.posValue === '中锋' && enSelect.genderText === 'Male' && enSelect.genderValue === '男',
+      'English：下拉显示英文但取值仍是中文枚举（位置/性别）' + JSON.stringify(enSelect));
+    assert(enSelect && enSelect.posCount >= 5,
+      'English：位置下拉选项数量完整（篮球 5 位置）' + (enSelect && enSelect.posCount));
+
+    // 切繁体
+    await evaluate('location.hash = "#/settings"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(600);
+    await evaluate(`document.querySelector('.st-tab[data-tab="general"]').click(); I18n.setLocale('zh-TW'); "ok"`);
+    const twSt = await evalWait(`({
+      loc: I18n.locale,
+      nav: document.getElementById('pageTitle').textContent.trim(),
+      dataTab: document.querySelector('.st-tab[data-tab="data"]').textContent.trim()
+    })`, (v) => v && v.loc === 'zh-TW' && v.nav.endsWith('設定'), 12000);
+    assert(twSt && twSt.dataTab.includes('資料'), '繁體：导航「設定」、数据页签「資料…」' + JSON.stringify(twSt));
+    // 繁体下位置用字（中锋→中鋒；控球后卫→控球後衛）+ 新增英橄/冰球位置繁体
+    await evaluate('location.hash = "#/profile"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(700);
+    await evaluate(`document.querySelector('#profAthAdd').click(); "ok"`);
+    await evalWait(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const pos = ov && ov.querySelector('#fPos');
+      return !!(pos && [...pos.options].some((o) => o.textContent.trim() === '中鋒'));
+    })()`, (v) => v === true);
+    const twSelect = await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const r = [...ov.querySelector('#fPos').options].map((o) => o.textContent.trim());
+      ov.querySelector('[data-x]').click();
+      return r;
+    })()`);
+    assert(twSelect.some((t) => t === '中鋒') && twSelect.some((t) => t === '控球後衛'),
+      '繁體：位置选项转繁體（中鋒/控球後衛）' + JSON.stringify(twSelect));
+
+    // 繁体下英式橄榄球 15 人制全位置（位置下拉取当前计划的 sport → 换计划 sport=橄榄球）
+    await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      if (ov) ov.querySelector('[data-x]') && ov.querySelector('[data-x]').click();
+      return 'ok';
+    })()`);
+    await sleep(200);
+    await evaluate(`(() => {
+      const mac = Store.activeMacro();
+      const a = Store.data.athletes.find((x) => x.macroId === mac.id);
+      if (a) a.position = '';
+      mac.sport = '橄榄球';
+      Store.save();
+      document.querySelector('#profAthAdd').click();
+      return 'ok';
+    })()`);
+    await evalWait(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const pos = ov && ov.querySelector('#fPos');
+      return !!(pos && [...pos.options].some((o) => o.textContent.trim() === '鉤球員') && [...pos.options].some((o) => o.textContent.trim() === '殿衛'));
+    })()`, (v) => v === true);
+    const twRugbyOpts = await evaluate(`(() => {
+      const ov = [...document.querySelectorAll('.overlay')].pop();
+      const opts = [...ov.querySelector('#fPos').options].map((o) => o.textContent.trim());
+      ov.querySelector('[data-x]').click();
+      const mac = Store.activeMacro();
+      mac.sport = '篮球';
+      Store.save();
+      return opts;
+    })()`);
+    assert(['支柱', '鉤球員', '鎖球員', '側翼', '八號位', '傳鋒', '接鋒', '內中鋒', '外中鋒', '邊鋒', '殿衛'].every((k) => twRugbyOpts.includes(k)),
+      '繁體：英式橄榄球 15 人制全位置（11 个）' + JSON.stringify(twRugbyOpts));
+
+    // 恢复简体
+    await evaluate('location.hash = "#/settings"; window.dispatchEvent(new Event("hashchange")); "ok"');
+    await sleep(600);
+    await evaluate(`document.querySelector('.st-tab[data-tab="general"]').click(); I18n.setLocale('zh-CN'); "ok"`);
+    const cnBack = await evalWait(`({
+      loc: I18n.locale,
+      nav: document.getElementById('pageTitle').textContent.trim(),
+      persisted: Store.data.settings.locale
+    })`, (v) => v && v.loc === 'zh-CN' && v.nav.endsWith('设置'), 12000);
+    assert(cnBack && cnBack.persisted === 'zh-CN', '恢复简体中文 ' + JSON.stringify(cnBack));
+  }
 
   const appErrors = consoleErrors.filter((e) => e && !/favicon|ERR_CONNECTION|Autofill/.test(e));
   assert(appErrors.length === 0, '无应用级 console 错误' + (appErrors.length ? '：' + appErrors[0] : ''));

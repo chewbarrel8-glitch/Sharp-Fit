@@ -15,9 +15,10 @@ window.matchMedia = window.matchMedia || (() => ({ matches: false, addListener()
 // 造数夹具复用应用内示例（src/js/demo.js：XX篮球队备战计划），保证冒烟测试与「载入示例」同源
 // 不引入 app.js：jsdom 会异步触发 DOMContentLoaded，app 启动引导会抢先挂载 macro 到静态 #view，
 // 与下方手动挂载的 section 产生重复 ID，触发 jsdom(nwsapi) 重复 ID 下作用域 querySelector 失效
-const files = ['js/util.js', 'js/sports.js', 'js/store.js', 'js/ui.js',
+const files = ['vendor/xlsx.full.min.js', 'js/util.js', 'js/sports.js', 'js/store.js', 'js/ui.js',
   'js/views/macro.js', 'js/views/meso.js', 'js/views/micro.js', 'js/views/session.js',
-  'js/views/load.js', 'js/views/exercises.js'];
+  'js/views/load.js', 'js/views/exercises.js', 'js/views/profile.js', 'js/views/kpi.js',
+  'js/views/kpiLab.js', 'js/views/importTest.js'];
 const seedSource = fs.readFileSync(path.join(root, 'src', 'js', 'demo.js'), 'utf8');
 // 拼接为单个脚本执行，保证跨文件顶层 const 共享（与浏览器多 <script> 行为一致）
 window.eval(files.map((f) => fs.readFileSync(path.join(root, 'src', f), 'utf8')).join('\n;\n')
@@ -287,6 +288,139 @@ window.addEventListener('error', (e) => errors.push(e.message));
   window.exitDemo();
   assert(dd.macros.length === 1 && dd.macros[0].id === 'mac_u' && dd.mesos.length === 1 && dd.athletes.length === 1, '退出示例后用户计划/中周期/运动员完整保留');
   assert(dd.settings.activeMacroId === 'mac_u' && !dd.settings.demo, '退出示例后切回用户载入前的计划');
+
+  // ---------- Excel 测试导入：纯函数清洗与宽表构建记录 ----------
+  const IT = T.Views.importTest._test;
+  assert(typeof window.XLSX === 'object' && !!window.XLSX.read, 'SheetJS 已加载');
+  assert(IT.parseDate('2026/10/8', 2026) === '2026-10-08', '日期解析 2026/10/8');
+  assert(IT.parseDate('2026年10月8日', 2026) === '2026-10-08', '日期解析中文');
+  assert(IT.parseDate('10月8日', 2026) === '2026-10-08', '日期解析月日补年');
+  assert(IT.parseDate(45292, 2026) === '2024-01-01', '日期解析 Excel 序列号');
+  assert(IT.parseNum('12.5s').value === 12.5 && IT.parseNum('≥50').value === 50, '数值解析剥离单位/符号');
+  assert(IT.parseNum('-').empty === true && IT.parseNum('未测').empty === true, '空记号（-/未测）跳过不计错');
+  assert(IT.parseNum('abc').bad === 'abc', '非数字标记为错误');
+  const tgts = IT.listTargets();
+  assert(tgts.some((t) => t.name === '30m冲刺' && t.mode === 'named'), '目标库含 30m冲刺');
+  assert(IT.suggestTarget('30米', tgts) && IT.suggestTarget('30米', tgts).name === '30m冲刺', '别名 30米 → 30m冲刺');
+  const impMatrix = [
+    ['XX 篮球队体测表', null, null, null],
+    ['姓名', '30米', '纵跳', '备注'],
+    ['张三', '4.2', '60', '正常'],
+    ['李四', '4.5', '未测', ''],
+    [null, 'x', 'x', '有数据但无名']
+  ];
+  assert(IT.detectHeaderRow(impMatrix) === 1, '表头行自动识别为第 2 行');
+  const t30 = tgts.find((t) => t.name === '30m冲刺');
+  const tVJ = tgts.find((t) => t.name === '纵跳');
+  const impActions = new Map([['张三', { t: 'match', id: 'ath_u' }], ['李四', { t: 'new' }]]);
+  const built = IT.buildRecords({
+    dataRows: impMatrix.slice(2), rnoBase: 3, format: 'wide',
+    ciName: 0, ciName2: -1, ciDate: -2, fixedDate: '2026-10-01', year: 2026,
+    cols: [
+      { ci: 1, mode: t30.mode, key: t30.key, name: t30.name, unit: t30.unit, invert: true },
+      { ci: 2, mode: tVJ.mode, key: tVJ.key, name: tVJ.name, unit: tVJ.unit, invert: false }
+    ],
+    targets: tgts, actions: impActions, dup: 'overwrite'
+  });
+  assert(built.validItems === 3, '宽表构建 3 个有效数据点（未测/空单元格跳过）');
+  assert(built.records.length === 2 && built.newAths.length === 1 && built.newAths[0] === '李四', '记录 2 行，李四识别为新建运动员');
+  assert(built.errors.length === 1 && /姓名为空/.test(built.errors[0].msg), '有数据无名的行报错并跳过');
+  // 冲突探查：给张三写入一条同日 30m 成绩后再构建 → 1 处冲突
+  dd.profiles.push({ id: 'pf_t', athleteId: 'ath_u', date: '2026-10-01', custom: [{ name: '30m冲刺', value: 4.4, unit: 's' }] });
+  const built2 = IT.buildRecords({
+    dataRows: impMatrix.slice(2, 3), rnoBase: 3, format: 'wide',
+    ciName: 0, ciName2: -1, ciDate: -2, fixedDate: '2026-10-01', year: 2026,
+    cols: [{ ci: 1, mode: t30.mode, key: t30.key, name: t30.name, unit: 's', invert: true }],
+    targets: tgts, actions: new Map([['张三', { t: 'match', id: 'ath_u' }]]), dup: 'overwrite'
+  });
+  assert(built2.conflictN === 1 && built2.records[0].items[0].conflict === true, '同人同日同项目识别为冲突');
+
+  // 长表（项目名列 + 成绩列 + 单位列）：系统项目精确匹配，陌生项目自动建自定义，坏值报错
+  const longMatrix = [
+    ['张三', '30m冲刺', '4.3', '秒'],
+    ['李四', '陌生专项项目', '12', '个'],
+    ['张三', '纵跳', 'abc', 'cm']
+  ];
+  const builtLong = IT.buildRecords({
+    dataRows: longMatrix, rnoBase: 2, format: 'long',
+    ciName: 0, ciName2: -1, ciDate: -2, fixedDate: '2026-10-01', year: 2026,
+    ciItem: 1, ciValue: 2, ciUnit: 3,
+    targets: tgts, actions: new Map([['张三', { t: 'match', id: 'ath_u' }], ['李四', { t: 'new' }]]), dup: 'overwrite'
+  });
+  assert(builtLong.validItems === 2 && builtLong.records.length === 2, '长表构建 2 个有效数据点');
+  const li30 = builtLong.records[0].items[0];
+  assert(li30.name === '30m冲刺' && li30.unit === 's' && li30.invert === true, '长表系统项目匹配并携带单位/方向（秒→越小越好）');
+  assert(builtLong.newItems.includes('陌生专项项目'), '长表陌生项目自动列为自定义');
+  assert(builtLong.errors.length === 1 && /abc/.test(builtLong.errors[0].msg), '长表坏值单元格报错');
+
+  // ---------- 自动识别管线：A 宽表+标题行+日期列 / B 长表五列 / C 表头第3行+sheet名日期 ----------
+  assert(typeof IT.autoAnalyze === 'function' && typeof IT.autoAnalyzeSheet === 'function' && typeof IT.autoLocate === 'function', '自动识别管线已导出');
+  // A 类：宽表 + 标题行 + 日期列 + 备注列（列名用别名：30米 / 纵跳摸高）
+  const wsA = [
+    ['Sharp Fit 队 2026年6月 体测', null, null, null, null],
+    ['姓名', '测试日期', '30米', '纵跳摸高', '备注'],
+    ['张三', '2026/6/1', '4.4', '58', '状态好'],
+    ['赵六', '2026/6/1', '4.6', '未测', ''],
+    ['张三', '2026/6/8', '4.3', '59', '']
+  ];
+  const aA = IT.autoAnalyzeSheet('A宽表.xlsx', '6月体测', wsA, tgts);
+  assert(aA.ok && aA.format === 'wide' && aA.headerRow === 1, 'A：宽表识别（标题行下方为表头）');
+  assert(aA.stats.items === 5 && aA.stats.rows === 3 && aA.stats.errN === 0, 'A：统计 5 数据点/3 记录行/0 问题行 实际 ' + JSON.stringify(aA.stats));
+  assert(aA.stats.athMatch === 1 && aA.stats.athNew === 1 && aA.newAths[0] === '赵六', 'A：张三匹配档案、赵六标记新建');
+  assert(aA.stats.dateFrom === '2026-06-01' && aA.stats.dateTo === '2026-06-08', 'A：日期范围 2026-06-01 ~ 2026-06-08');
+  const aA30 = aA.records[0].items.find((it) => it.name === '30m冲刺');
+  const aAVj = aA.records[0].items.find((it) => it.field === 'verticalJump');
+  assert(aA30 && aA30.value === 4.4 && aA30.unit === 's' && aA30.invert === true, 'A：30米 别名命中 30m冲刺（单位/方向随目标）');
+  assert(aAVj && aAVj.value === 58, 'A：纵跳摸高 别名命中纵跳固定字段');
+  assert(aA.maps.some((m) => m.kind === 'sys' && m.name === '30m冲刺') && aA.ignored.join() === '备注', 'A：映射摘要含系统项目、备注列忽略');
+  // B 类：长表（运动员/测试日期/测试项目/成绩/单位 五列明细）
+  const wsB = [
+    ['运动员', '测试日期', '测试项目', '成绩', '单位'],
+    ['王五', '2026-06-01', '30m冲刺', '4.5', '秒'],
+    ['王五', '2026-06-01', '深蹲1RM', '100', 'kg'],
+    ['赵六', '2026-06-02', '卧推1RM', '80', '公斤'],
+    ['赵六', '2026-06-02', '纵跳', '55', 'cm'],
+    ['王五', '2026-06-03', '陌生项目Z', '12', 'cm']
+  ];
+  const aB = IT.autoAnalyzeSheet('B长表.xlsx', '明细', wsB, tgts);
+  assert(aB.ok && aB.format === 'long' && aB.headerRow === 0, 'B：长表识别（五列角色定位）');
+  assert(aB.stats.items === 5 && aB.stats.rows === 5 && aB.stats.dateFrom === '2026-06-01' && aB.stats.dateTo === '2026-06-03', 'B：统计与日期范围 实际 ' + JSON.stringify(aB.stats));
+  const bItems = aB.records.flatMap((r) => r.items);
+  assert(bItems.some((it) => it.name === '深蹲1RM' && it.mode === 'rm1'), 'B：深蹲1RM 识别为 1RM 目标');
+  assert(bItems.some((it) => it.name === '30m冲刺' && it.unit === 's' && it.invert === true), 'B：系统项目携带单位/方向');
+  assert(aB.newItems.includes('陌生项目Z') && aB.maps.some((m) => m.kind === 'new' && m.name === '陌生项目Z'), 'B：陌生项目列为新建自定义项目');
+  assert(aB.stats.athMatch === 0 && aB.stats.athNew === 2, 'B：王五/赵六 均为新建');
+  // C 类：列顺序打乱、表头在第 3 行、无日期列（日期从 sheet 名兜底）
+  const wsC = [
+    ['6月15日 场地测试', null, null, null],
+    [null, null, null, null],
+    ['纵跳摸高', '30米', '姓名', '备注'],
+    ['63', '4.7', '钱七', ''],
+    ['70', '4.9', '孙八', '补测']
+  ];
+  const Y = new Date().getFullYear();
+  assert(IT.guessFixedDate('6月15日', wsC, 2, Y) === `${Y}-06-15`, 'C：sheet 名推断整表统一日期');
+  const aC = IT.autoAnalyzeSheet('C多sheet.xlsx', '6月15日', wsC, tgts);
+  assert(aC.ok && aC.format === 'wide' && aC.headerRow === 2, 'C：第 3 行表头识别');
+  assert(aC.stats.items === 4 && aC.stats.rows === 2 && aC.stats.dateFrom === `${Y}-06-15` && aC.stats.dateTo === `${Y}-06-15`, 'C：4 数据点/2 行/统一日期 实际 ' + JSON.stringify(aC.stats));
+  assert(aC.records[0].rawName === '钱七' && aC.records[0].items.length === 2, 'C：姓名列在打乱后的第 3 列，每人 2 个数据点');
+  assert(aC.ignored.join() === '备注', 'C：备注列忽略');
+  // 多 sheet 文件整体识别 + 真实工作簿（autoAnalyze）与跳过原因记录
+  const mix = IT.analyzeSheets('混合.xlsx', [{ name: 'A', matrix: wsA }, { name: 'B', matrix: wsB }, { name: '6月15日', matrix: wsC }], tgts);
+  assert(mix.length === 3 && mix.every((s) => s.ok) && mix.map((s) => s.format).join() === 'wide,long,wide', '混合文件三个 sheet 全部识别为对应排版');
+  const wbAuto = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wbAuto, window.XLSX.utils.aoa_to_sheet(wsC), '6月15日');
+  window.XLSX.utils.book_append_sheet(wbAuto, window.XLSX.utils.aoa_to_sheet([['姓名', '体重'], ['王五', '']]), '无日期');
+  const abAuto = window.XLSX.write(wbAuto, { bookType: 'xlsx', type: 'array' });
+  const resAuto = await IT.autoAnalyze([
+    { name: '多sheet.xlsx', arrayBuffer: async () => abAuto },
+    { name: '坏文件.xlsx', arrayBuffer: async () => new ArrayBuffer(4) }
+  ]);
+  assert(resAuto.length === 2 && resAuto[0].sheets.length === 2, 'autoAnalyze：两个文件、第一个文件两个 sheet');
+  const rAuto0 = resAuto[0].sheets[0];
+  assert(rAuto0.ok && rAuto0.stats.items === 4 && rAuto0.format === 'wide', 'autoAnalyze：真实 xlsx 的 sheet 识别出统一记录');
+  assert(!resAuto[0].sheets[1].ok && /日期/.test(resAuto[0].sheets[1].reason), 'autoAnalyze：无日期 sheet 跳过并记录原因：' + resAuto[0].sheets[1].reason);
+  assert(resAuto[1].sheets.length === 1 && !resAuto[1].sheets[0].ok, 'autoAnalyze：坏文件记为跳过，不中断其余文件');
 
   console.log(errors.length ? '\n== 有失败项 ==' : '\n== 全部通过 ==');
   process.exit(errors.length ? 1 : 0);
