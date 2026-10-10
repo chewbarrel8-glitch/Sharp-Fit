@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1720" height="1160" viewBox="0 0 1720 1160" font-family="'PingFang SC','Microsoft YaHei','Hiragino Sans GB',sans-serif">
+  <rect width="1720" height="1160" fill="#FFFFFF"/>
+
+  <!-- 连接线：根 → 各分支 -->
+  <g stroke-width="3.5" fill="none" stroke-linecap="round">
+    <path d="M360 580 C 415 580 415 90 470 90"  stroke="#E4572E"/>
+    <path d="M360 580 C 415 580 415 242 470 242" stroke="#E89B1C"/>
+    <path d="M360 580 C 415 580 415 394 470 394" stroke="#5C9E31"/>
+    <path d="M360 580 C 415 580 415 546 470 546" stroke="#2E933C"/>
+    <path d="M360 580 C 415 580 415 698 470 698" stroke="#0F7BA6"/>
+    <path d="M360 580 C 415 580 415 850 470 850" stroke="#6C4BB8"/>
+    <path d="M360 580 C 415 580 415 1002 470 1002" stroke="#C9314B"/>
+  </g>
+
+  <!-- 根节点 -->
+  <g>
+    <rect x="40" y="510" width="320" height="140" rx="20" fill="#1B2A4A"/>
+    <text x="200" y="566" text-anchor="middle" font-size="42" font-weight="700" fill="#FFFFFF">Sharp Fit</text>
+    <text x="200" y="606" text-anchor="middle" font-size="24" fill="#C9D6EA">训练计划管理平台</text>
+    <text x="200" y="634" text-anchor="middle" font-size="18" fill="#8FA6C8">开源 · 数据本地存储</text>
+  </g>
+
+  <!-- 分支 1 周期训练计划制定 -->
+  <g>
+    <rect x="470" y="58" width="250" height="64" rx="32" fill="#E4572E"/>
+    <text x="595" y="98" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">周期训练计划制定</text>
+    <circle cx="762" cy="90" r="6" fill="#E4572E"/>
+    <text x="786" y="98" font-size="23" fill="#333333">大周期架构 · 阶段划分 · 周期模型参考 · 参训名单管理</text>
+  </g>
+
+  <!-- 分支 2 中周期 -->
+  <g>
+    <rect x="470" y="210" width="250" height="64" rx="32" fill="#E89B1C"/>
+    <text x="595" y="250" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">中周期</text>
+    <circle cx="762" cy="242" r="6" fill="#E89B1C"/>
+    <text x="786" y="250" font-size="23" fill="#333333">4–8 周编排 · 每日课表安排 · 计划/实际 KPI · 休息日管理</text>
+  </g>
+
+  <!-- 分支 3 小周期 -->
+  <g>
+    <rect x="470" y="362" width="250" height="64" rx="32" fill="#5C9E31"/>
+    <text x="595" y="402" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">小周期</text>
+    <circle cx="762" cy="394" r="6" fill="#5C9E31"/>
+    <text x="786" y="402" font-size="23" fill="#333333">7 天结构 · 课型模板 · 周内负荷分布 · 快速复制复用</text>
+  </g>
+
+  <!-- 分支 4 训练课 -->
+  <g>
+    <rect x="470" y="514" width="250" height="64" rx="32" fill="#2E933C"/>
+    <text x="595" y="554" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">训练课</text>
+    <circle cx="762" cy="546" r="6" fill="#2E933C"/>
+    <text x="786" y="554" font-size="23" fill="#333333">动作库分类 · kg/BW/m/s/— 五量纲 · 组×次×%1RM · 逐组完成 · RIR</text>
+  </g>
+
+  <!-- 分支 5 负荷管理系统 -->
+  <g>
+    <rect x="470" y="666" width="250" height="64" rx="32" fill="#0F7BA6"/>
+    <text x="595" y="706" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">负荷管理系统</text>
+    <circle cx="762" cy="698" r="6" fill="#0F7BA6"/>
+    <text x="786" y="706" font-size="23" fill="#333333">AU=sRPE×时长 · 吨位/次数/距离/时长 · 疲劳与峰值状态 · 团队负荷看板</text>
+  </g>
+
+  <!-- 分支 6 运动员档案 -->
+  <g>
+    <rect x="470" y="818" width="250" height="64" rx="32" fill="#6C4BB8"/>
+    <text x="595" y="858" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">运动员档案</text>
+    <circle cx="762" cy="850" r="6" fill="#6C4BB8"/>
+    <text x="786" y="858" font-size="23" fill="#333333">1RM 库 · 逐组打卡记录 · 个人负荷报告 · 强度自动换算</text>
+  </g>
+
+  <!-- 分支 7 KPI 分析 -->
+  <g>
+    <rect x="470" y="970" width="250" height="64" rx="32" fill="#C9314B"/>
+    <text x="595" y="1010" text-anchor="middle" font-size="25" font-weight="600" fill="#FFFFFF">KPI 分析</text>
+    <circle cx="762" cy="1002" r="6" fill="#C9314B"/>
+    <text x="786" y="1010" font-size="23" fill="#333333">周期总表五曲线 · 计划 vs 实际对比 · 多维统计 · 阶段复盘</text>
+  </g>
+</svg>
