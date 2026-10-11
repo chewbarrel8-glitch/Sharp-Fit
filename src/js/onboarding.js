@@ -1,7 +1,7 @@
-/* Sharp Fit · 开场动画 v5：智能杠铃装配开屏（每次启动播放，结束后点击「下一步」进入引导）
-   开屏分镜：杠铃杆展开 → 杠铃片依次飞入装配（光环+配重浮字）→ 杆压弯弹回 → 小哑铃抢镜被弹飞 → 力-时间曲线淡入 → 下一步按钮；
-   三屏引导（仅首次）：哑铃装配（黑箱）→ 柱状图计数（数据）→ 趋势光点（看见）；
-   第三屏副文「看得见的训练，才能不断进步」；按钮「开始创建我的计划」。 */
+/* Sharp Fit · Splash v5: bar chart + heartbeat loop (plays every launch, click Next to enter guide)
+   Splash: 6 ascending bars with cycling highlight + beating heart with ECG lines;
+   Three-slide guide (first launch only): dumbbell assembly (black box) -> bar chart count (data) -> trend light (visible);
+   Slide 3 subcopy: "看得见的训练，才能不断进步"; CTA: "开始创建我的计划". */
 (() => {
   'use strict';
 
@@ -9,16 +9,16 @@
   const REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const seen = () => { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } };
-  const mark = () => { try { localStorage.setItem(KEY, '1'); } catch (e) { /* 忽略存储失败 */ } }
+  const mark = () => { try { localStorage.setItem(KEY, '1'); } catch (e) { /* ignore storage failure */ } }
 
-  /* —— 平滑 CMJ（垂直纵跳）力-时间曲线：静立 → 下蹲 → 制动 → 蹬伸 → 腾空 → 冲击 → 回稳 —— */
+  /* —— Smooth CMJ (countermovement jump) force-time curve: stand -> squat -> brake -> drive -> flight -> impact -> recover —— */
   function buildCurve(n = 80) {
     const seg = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
     const ease = (x) => x * x * (3 - 2 * x);
     const pts = [];
     for (let i = 0; i < n; i++) {
       const t = i / (n - 1);
-      let y = 0.35; // 体重基线
+      let y = 0.35; // body weight baseline
       if (t < 0.20) y = 0.35 + 0.004 * Math.sin(t * 70);
       else if (t < 0.32) y = 0.35 - 0.20 * ease(seg(t, 0.20, 0.32));
       else if (t < 0.47) y = 0.15 + 0.26 * ease(seg(t, 0.32, 0.47));
@@ -27,15 +27,15 @@
       else if (t < 0.79) y = 0;
       else if (t < 0.845) y = 0.72 * Math.sin(Math.PI * seg(t, 0.79, 0.845));
       else y = 0.35 - 0.12 * (1 - ease(seg(t, 0.845, 0.96)));
-      pts.push(Math.max(0, Math.min(1, y + 0.003 * Math.sin(i * 0.9)))); // 仪器级微颤
+      pts.push(Math.max(0, Math.min(1, y + 0.003 * Math.sin(i * 0.9)))); // instrument-level micro jitter
     }
     return pts;
   }
 
-  /* 引导页 SVG 坐标系（viewBox 640×260） */
+  /* Guide SVG coordinate system (viewBox 640x260) */
   const X0 = 20, X1 = 620;
 
-  /* Catmull-Rom → 三次贝塞尔平滑 */
+  /* Catmull-Rom to cubic bezier smoothing */
   function smoothD(P) {
     let d = 'M' + P[0][0].toFixed(1) + ' ' + P[0][1].toFixed(1);
     for (let i = 0; i < P.length - 1; i++) {
@@ -52,9 +52,9 @@
     return c || 'oklch(94% 0.2 117)';
   }
 
-  /* ============ 开屏：柱状图跑步 + 心跳图（循环，结束后点下一步进入引导） ============ */
+  /* ============ Splash: bar chart + heartbeat (loop, click Next to enter guide) ============ */
   function runSplash(root, onDone) {
-    /* 6 根递增柱子（楼梯），每根柱子显示一项数据，循环高亮；上方心形跳动 + 两侧 ECG 曲线穿过 */
+    /* 6 ascending bars (staircase), each shows one data metric, cycling highlight; beating heart above with ECG lines */
     const bars = [
       { x: 90,  top: 260, h: 40,  data: '180', unit: 'spm' },
       { x: 170, top: 238, h: 62,  data: '5.2', unit: 'km' },
@@ -64,7 +64,7 @@
       { x: 490, top: 104, h: 196, data: 'PB!', unit: '' },
     ];
 
-    // 柱子（始终显示，循环高亮由 CSS 控制）
+    // Bars always visible; cycling highlight controlled by CSS
     const barsSvg = bars.map((b, i) => `
       <g class="bar-col bar-col-${i}" data-i="${i}">
         <rect class="bar-bg" x="${b.x - 26}" y="${b.top}" width="52" height="${b.h}" rx="6"/>
@@ -73,12 +73,12 @@
         <text class="bar-unit" x="${b.x}" y="${b.top - 0}">${b.unit}</text>
       </g>`).join('');
 
-    // 更逼真的心形 path（适配面板 y=14~114）
+    // Realistic heart path (fits panel y=14~114)
     const heartPath = 'M320,72 C320,65 307,53 295,53 C280,53 270,65 270,78 C270,92 320,112 320,112 C320,112 370,92 370,78 C370,65 360,53 345,53 C333,53 320,65 320,72 Z';
 
-    // 左侧 ECG（连续波形，从左到心形左边缘 x≈270）
+    // Left ECG (continuous waveform, from left to heart left edge x~270)
     const ecgLeft = 'M30,76 L100,76 L106,72 L110,76 L116,76 L122,68 L126,84 L130,66 L134,76 L210,76 L216,72 L220,76 L226,76 L232,64 L236,88 L240,62 L244,76 L266,76';
-    // 右侧 ECG（连续波形，从心形右边缘 x≈370 到右）
+    // Right ECG (continuous waveform, from heart right edge x~370 to right)
     const ecgRight = 'M374,76 L400,76 L406,72 L410,76 L416,76 L422,66 L426,86 L430,64 L434,76 L510,76 L516,72 L520,76 L526,76 L532,68 L536,84 L540,66 L544,76 L610,76';
 
     const stage = document.createElement('div');
@@ -86,25 +86,25 @@
     stage.innerHTML = `
       <div class="splash-runner" aria-hidden="true">
         <svg viewBox="0 0 640 360">
-          <!-- 科技网格背景 -->
+          <!-- Tech grid background -->
           <g class="tech-grid">
             <line x1="0" y1="100" x2="640" y2="100"/>
             <line x1="0" y1="170" x2="640" y2="170"/>
             <line x1="0" y1="240" x2="640" y2="240"/>
             <line x1="0" y1="310" x2="640" y2="310"/>
           </g>
-          <!-- 心跳监测区：心形跳动 + 两侧 ECG 曲线穿过 -->
+          <!-- Heart rate monitor: beating heart + ECG lines passing through -->
           <g class="heart-panel">
             <rect class="heart-bg" x="20" y="14" width="600" height="100" rx="12"/>
-            <!-- 左侧 ECG -->
+            <!-- Left ECG -->
             <path class="ecg-line" d="${ecgLeft}"/>
-            <!-- 右侧 ECG -->
+            <!-- Right ECG -->
             <path class="ecg-line" d="${ecgRight}"/>
-            <!-- 中间跳动心形 -->
+            <!-- Beating heart in center -->
             <path class="heart-shape" d="${heartPath}"/>
             <path class="heart-shape heart-glow" d="${heartPath}"/>
           </g>
-          <!-- 柱状图 -->
+          <!-- Bar chart -->
           <g class="run-bars">${barsSvg}</g>
         </svg>
       </div>
@@ -142,10 +142,10 @@
     setTimeout(() => stage.classList.add('splash-ready'), DURATION);
   }
 
-  /* ============ 三屏引导：痛点 → 方法 → 主张（仅首次启动） ============
-     三屏各配专属视觉：① 哑铃装配（黑箱）② 柱状图计数（数据）③ 趋势光点（看见） */
+  /* ============ Three-slide guide: pain point -> method -> vision (first launch only) ============
+     Each slide has dedicated visuals: 1) dumbbell assembly (black box) 2) bar chart count (data) 3) trend light (visible) */
   function bellVisual() {
-    /* 拆件：横杆组（含两端卡箍）/ 左片组 / 右片组 —— 供「装配」动效分层入场 */
+    /* Disassembled parts: bar group (with collars) / left plates / right plates — for layered "assembly" entrance */
     const barShape = `
       <rect x="170" y="104" width="9" height="52" rx="4"/>
       <rect x="229" y="126" width="182" height="8" rx="4"/>
@@ -196,7 +196,7 @@
       </svg>`;
   }
 
-  /* 周期化上升的进步趋势（波动上行） */
+  /* Periodized upward progress trend (oscillating rise) */
   const TREND = [0.30, 0.38, 0.35, 0.45, 0.52, 0.48, 0.58, 0.68, 0.62, 0.74, 0.80, 0.88];
   const TREND_P = TREND.map((v, i) => [X0 + (X1 - X0) * (i / (TREND.length - 1)), 214 - v * 132]);
 
@@ -229,7 +229,7 @@
       </svg>`;
   }
 
-  /* 数字滚动计数：柱状图数字从 0 滚到目标值（与柱子升起节奏错峰同步） */
+  /* Number roll-up: bar chart numbers animate from 0 to target (synced with bar rise) */
   function playBarsCounters(slide, token, getToken) {
     const nums = Array.from(slide.querySelectorAll('.bar-num'));
     if (!nums.length) return;
@@ -244,7 +244,7 @@
       n.style.transform = 'translateY(6px)';
       const t0 = performance.now();
       (function tick(now) {
-        if (getToken() !== token) return; // 已切屏/重播，终止旧计数
+        if (getToken() !== token) return; // slide switched/replayed, cancel stale counter
         const p = (now - t0 - DELAYS[k]) / 850;
         if (p < 0) { requestAnimationFrame(tick); return; }
         n.style.opacity = '1';
@@ -287,7 +287,7 @@
       </div>`;
     root.appendChild(stage);
 
-    // 屏3 趋势曲线：描边生长动画的路径长度
+    // Slide 3 trend curve: path length for stroke-draw animation
     const trendLine = stage.querySelector('.trend-line');
     if (trendLine) trendLine.style.setProperty('--len', Math.ceil(trendLine.getTotalLength()));
 
@@ -302,9 +302,9 @@
       track.style.transform = `translateX(-${idx * 100}%)`;
       dotEls.forEach((b, k) => b.classList.toggle('on', k === idx));
       Array.from(track.children).forEach((s) => s.classList.remove('play'));
-      counterToken++; // 使未完成的旧计数循环失效
+      counterToken++; // invalidate any running counter loops
       const cur = track.children[idx];
-      void cur.offsetWidth; // 强制重排，重播入场动画
+      void cur.offsetWidth; // force reflow to replay entrance animations
       cur.classList.add('play');
       if (cur.dataset.state === 'bars') playBarsCounters(cur, counterToken, () => counterToken);
     }
@@ -338,7 +338,7 @@
     if (cta) cta.addEventListener('click', finish);
     window.addEventListener('keydown', onKey, true);
 
-    // 横向滑动 / 拖拽翻页
+    // Horizontal swipe / drag to change slides
     let px = null;
     view.addEventListener('pointerdown', (e) => { px = e.clientX; });
     window.addEventListener('pointerup', (e) => {
@@ -351,7 +351,7 @@
     go(0);
   }
 
-  /* ============ 入口：开屏每次播放；三屏引导仅首次 ============ */
+  /* ============ Entry: splash plays every launch; three-slide guide only on first run ============ */
   function boot() {
     const root = document.createElement('div');
     root.id = 'sfIntro';

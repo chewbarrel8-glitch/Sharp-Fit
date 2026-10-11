@@ -1,7 +1,7 @@
-/* Sharp Fit · 开场动画 v7（柱状图跑步 + 心率图开屏 + 三屏专属视觉引导）
-   开屏：6 根递增柱子（楼梯），人形逐级跑上去，每柱显示数据，上方 ECG 心率曲线流动；
-   三屏：哑铃装配（扫光）→ 柱状计数（弹性）→ 趋势光点（涟漪）；
-   质感层：氛围微光 + 仪器网格 + 叙事眉题 + 品牌角标 */
+/* Sharp Fit · Splash v7 (bar chart + heartbeat splash + three-slide dedicated visuals)
+   Splash: 6 ascending bars (staircase) with cycling highlight, ECG heartbeat lines above;
+   Three slides: dumbbell assembly (sweep) -> bar count (bounce) -> trend light (ripple);
+   Texture layer: ambient glow + instrument grid + narrative kicker + brand mark */
 
 #sfIntro {
   position: fixed;
@@ -18,7 +18,7 @@
 #sfIntro.leaving { opacity: 0; pointer-events: none; }
 #sfIntro .sf-stage { position: absolute; inset: 0; }
 
-/* ============ 开屏：柱状图跑步 + 心率图（循环，结束后点下一步） ============ */
+/* ============ Splash: bar chart + heartbeat (loop, click Next when done) ============ */
 .sf-splash { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .sf-splash::before {
   content: "";
@@ -44,14 +44,14 @@
 }
 .splash-runner svg { width: 100%; height: 100%; overflow: visible; }
 
-/* 科技网格背景 */
+/* Tech grid background */
 .tech-grid line {
   stroke: color-mix(in oklab, var(--color-accent) 8%, transparent);
   stroke-width: 0.8;
   stroke-dasharray: 2 6;
 }
 
-/* 心跳监测面板：背景框 + 两侧 ECG + 中间跳动心形 */
+/* Heart rate monitor panel: background frame + ECG on both sides + beating heart in center */
 .heart-panel .heart-bg {
   fill: oklch(16% 0.02 264 / 0.6);
   stroke: color-mix(in oklab, var(--color-accent) 18%, transparent);
@@ -90,7 +90,7 @@
   50% { opacity: 0.45; }
 }
 
-/* 柱状图 */
+/* Bar chart */
 .run-bars .bar-bg {
   fill: oklch(22% 0.02 264);
   stroke: oklch(30% 0.02 264);
@@ -117,7 +117,7 @@
   opacity: 0;
 }
 
-/* 每根柱子循环渐变高亮（3s 循环，数据逐级点亮） */
+/* Each bar cycles gradient highlight (3s loop, data lights up progressively) */
 .bar-col-0 .bar-fill, .bar-col-0 .bar-data, .bar-col-0 .bar-unit { animation: barGlow 3s ease-in-out infinite; }
 .bar-col-1 .bar-fill, .bar-col-1 .bar-data, .bar-col-1 .bar-unit { animation: barGlow 3s ease-in-out 0.5s infinite; }
 .bar-col-2 .bar-fill, .bar-col-2 .bar-data, .bar-col-2 .bar-unit { animation: barGlow 3s ease-in-out 1.0s infinite; }
@@ -130,7 +130,7 @@
   24%, 100% { opacity: 0; }
 }
 
-/* 文案 */
+/* Copy */
 .splash-copy {
   position: relative;
   z-index: 3;
@@ -159,7 +159,7 @@
   animation: sfRiseIn 0.8s var(--ease-out) 0.85s both;
 }
 
-/* 下一步按钮 */
+/* Next button */
 .splash-next {
   position: relative;
   z-index: 3;
@@ -192,7 +192,7 @@
 }
 .splash-next:active { transform: translateY(0); filter: brightness(0.96); }
 
-/* 跳过：快进到最终态 */
+/* Skip: fast-forward to final state */
 .sf-splash.splash-skip .splash-eyebrow,
 .sf-splash.splash-skip .splash-copy h1 { animation: none; opacity: 1; transform: none; }
 .sf-splash.splash-skip .splash-next { opacity: 1; transform: none; pointer-events: auto; animation: none; }
@@ -203,7 +203,7 @@
   to { opacity: 1; transform: none; }
 }
 
-/* ============ 三屏引导 ============ */
+/* ============ Three-slide guide ============ */
 .sf-guide {
   display: flex;
   flex-direction: column;
@@ -212,7 +212,7 @@
   padding: 40px 40px 32px;
   overflow-y: auto;
 }
-/* 氛围层：中央强调色微光（不动、不抢焦点） */
+/* Ambient layer: central accent glow (static, does not steal focus) */
 .sf-guide::before {
   content: "";
   position: absolute;
@@ -221,7 +221,7 @@
   background: radial-gradient(ellipse 52% 38% at 50% 42%, color-mix(in oklab, var(--color-accent) 6%, transparent), transparent 72%);
   animation: sfFadeIn 1.1s ease both;
 }
-/* 仪器网格：中心隐约可见，边缘自然淡出 */
+/* Instrument grid: faintly visible in center, fades out at edges */
 .sf-guide::after {
   content: "";
   position: absolute;
@@ -273,7 +273,7 @@
 .g-visual { width: 100%; max-width: 580px; height: clamp(200px, 30vh, 264px); margin-bottom: 14px; }
 .g-visual svg { width: 100%; height: 100%; overflow: visible; }
 
-/* —— 屏1 · 哑铃装配（黑箱：横杆先出，杠铃片滑入装配，扫光掠过金属） —— */
+/* —— Slide 1 · Dumbbell assembly (black box: bar first, plates slide in, sweep over metal) —— */
 .bell-iron {
   fill: oklch(16% 0.018 264);
   stroke: oklch(33% 0.024 264);
@@ -308,7 +308,7 @@
   animation: sfBellShadow 0.9s var(--ease-out) 0.35s both;
 }
 .g-slide[data-state="bell"].play .bell-sheen { animation: sfBellSheen 1.35s ease-in-out 1.05s both; }
-/* glow 入场由各自动画的 opacity 驱动，无需 transition 常驻 */
+/* glow entrance driven by each animation's opacity, no persistent transition needed */
 .g-slide[data-state="bell"].play .bell-glow { transition: none; opacity: 1; }
 
 @keyframes sfBellBar {
@@ -333,7 +333,7 @@
 }
 @keyframes sfStrokeBreath { 0%, 100% { stroke-opacity: 0.35; } 50% { stroke-opacity: 0.95; } }
 
-/* —— 屏2 · 柱状图计数（数据：网格生长 → 柱体弹性升起 → 数字滚动） —— */
+/* —— Slide 2 · Bar chart count (data: grid grows -> bars bounce up -> numbers roll) —— */
 .grid-line, .base-line {
   transform: scaleX(0);
   transform-box: fill-box;
@@ -366,7 +366,7 @@
   to { transform: scaleY(1); }
 }
 
-/* 数字由 JS 滚动计数驱动（playBarsCounters），CSS 仅负责显现过渡 */
+/* Numbers driven by JS roll-up (playBarsCounters), CSS only handles reveal transition */
 .bar-num {
   font-family: var(--font-mono);
   font-size: 14px;
@@ -378,7 +378,7 @@
 }
 .bar-num:nth-of-type(3) { fill: var(--color-ink); }
 
-/* —— 屏3 · 进步趋势曲线（看见：光点引导生长，末端涟漪） —— */
+/* —— Slide 3 · Progress trend curve (visible: light dot guides growth, ripple at end) —— */
 .trend-base {
   stroke: oklch(100% 0 0 / 0.1);
   stroke-width: 1;
@@ -404,7 +404,7 @@
   transition: opacity 0.4s var(--ease-out);
 }
 .g-slide[data-state="trend"].play .trend-pt { opacity: 0.9; }
-/* 引导光点：沿曲线路径头部移动（offset-path），与描边生长同步，到达后淡出 */
+/* Guide light dot: moves along curve head (offset-path), synced with stroke growth, fades out on arrival */
 .trend-head {
   fill: var(--color-accent);
   opacity: 0;
@@ -431,7 +431,7 @@
   100% { r: 24; opacity: 0; }
 }
 
-/* 文案入场（随 .play 重播）：眉题 → 标题 → 副文 → CTA 错峰 */
+/* Copy entrance (replays with .play): kicker -> title -> sub -> CTA staggered */
 .g-kicker, .g-title, .g-sub, .g-cta { opacity: 0; transform: translateY(12px); }
 .g-slide.play .g-kicker { animation: sfRiseIn 0.6s var(--ease-out) both; }
 .g-slide.play .g-title { animation: sfRiseIn 0.6s var(--ease-out) 0.12s both; }
@@ -483,7 +483,7 @@
 }
 .btn-start:active { transform: translateY(0); filter: brightness(0.96); }
 
-/* 翻页圆点（伪元素扩大点击热区） */
+/* Page dots (pseudo-element expands click area) */
 .guide-dots { display: flex; gap: 10px; margin-top: 36px; }
 .g-dot {
   position: relative;
@@ -505,7 +505,7 @@
 .g-dot.on { width: 26px; background: var(--color-accent); }
 .g-dot.on:hover { background: var(--color-accent); }
 
-/* 弱化动效偏好：开屏显示最后一帧（人在最高柱），三屏保留信息去掉循环与位移 */
+/* Reduced motion preference: splash shows last frame, guide keeps info without loops/motion */
 @media (prefers-reduced-motion: reduce) {
   .sf-splash .bar-col .bar-fill,
   .sf-splash .bar-col .bar-data,
