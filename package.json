@@ -69,7 +69,7 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "artifactName": "Sharp-Fit-${version}-Windows-x64-setup.${ext}"
+      "artifactName": "Sharp-Fit-${version}-Windows-${arch}-setup.${ext}"
     },
     "linux": {
       "target": [
