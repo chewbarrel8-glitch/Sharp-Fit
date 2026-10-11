@@ -76,11 +76,6 @@
     // Realistic heart path (fits panel y=14~114)
     const heartPath = 'M320,72 C320,65 307,53 295,53 C280,53 270,65 270,78 C270,92 320,112 320,112 C320,112 370,92 370,78 C370,65 360,53 345,53 C333,53 320,65 320,72 Z';
 
-    // Left ECG (continuous waveform, from left to heart left edge x~270)
-    const ecgLeft = 'M30,76 L100,76 L106,72 L110,76 L116,76 L122,68 L126,84 L130,66 L134,76 L210,76 L216,72 L220,76 L226,76 L232,64 L236,88 L240,62 L244,76 L266,76';
-    // Right ECG (continuous waveform, from heart right edge x~370 to right)
-    const ecgRight = 'M374,76 L400,76 L406,72 L410,76 L416,76 L422,66 L426,86 L430,64 L434,76 L510,76 L516,72 L520,76 L526,76 L532,68 L536,84 L540,66 L544,76 L610,76';
-
     const stage = document.createElement('div');
     stage.className = 'sf-stage sf-splash';
     stage.innerHTML = `
@@ -93,20 +88,17 @@
             <line x1="0" y1="240" x2="640" y2="240"/>
             <line x1="0" y1="310" x2="640" y2="310"/>
           </g>
-          <!-- Heart rate monitor: beating heart + ECG lines passing through -->
-          <g class="heart-panel">
-            <rect class="heart-bg" x="20" y="14" width="600" height="100" rx="12"/>
-            <!-- Left ECG -->
-            <path class="ecg-line" d="${ecgLeft}"/>
-            <!-- Right ECG -->
-            <path class="ecg-line" d="${ecgRight}"/>
-            <!-- Beating heart in center -->
-            <path class="heart-shape" d="${heartPath}"/>
-            <path class="heart-shape heart-glow" d="${heartPath}"/>
-          </g>
+          <!-- Heart rate monitor panel background -->
+          <rect class="heart-bg" x="20" y="14" width="600" height="100" rx="12"/>
+          <!-- Beating heart in center -->
+          <path class="heart-shape" d="${heartPath}"/>
+          <path class="heart-shape heart-glow" d="${heartPath}"/>
           <!-- Bar chart -->
           <g class="run-bars">${barsSvg}</g>
         </svg>
+        <!-- ECG canvases: left and right of heart, continuous scrolling -->
+        <canvas class="ecg-canvas ecg-left"></canvas>
+        <canvas class="ecg-canvas ecg-right"></canvas>
       </div>
       <div class="splash-copy">
         <div class="splash-eyebrow">SHARP FIT</div>
@@ -114,6 +106,81 @@
       </div>
       <button type="button" class="splash-next">下一步</button>`;
     root.appendChild(stage);
+
+    // Canvas ECG: real cardiac cycle waveform scrolling left continuously
+    (function initEcg() {
+      const cvs = stage.querySelectorAll('.ecg-canvas');
+      if (!cvs.length) return;
+      const accent = accentColor();
+      // One cardiac cycle waveform: P -> QRS -> T, normalized -1..1 (0 = baseline)
+      // Standard ECG proportions: R is tallest, T ~1/3 of R, P ~1/8 of R
+      const cycle = (() => {
+        const pts = [];
+        for (let i = 0; i < 240; i++) {
+          const t = i / 240;
+          let v = 0;
+          // P wave: small rounded positive bump (8-16%)
+          if (t > 0.07 && t < 0.16) v = 0.10 * Math.sin((t - 0.07) / 0.09 * Math.PI);
+          // PR segment: flat baseline (16-22%)
+          // Q wave: tiny negative dip (22-24%)
+          else if (t > 0.22 && t < 0.24) v = -0.08 * Math.sin((t - 0.22) / 0.02 * Math.PI);
+          // R wave: tall sharp positive peak (24-28%)
+          else if (t > 0.24 && t < 0.28) v = 1.0 * Math.sin((t - 0.24) / 0.04 * Math.PI);
+          // S wave: small negative dip (28-31%)
+          else if (t > 0.28 && t < 0.31) v = -0.22 * Math.sin((t - 0.28) / 0.03 * Math.PI);
+          // ST segment: flat baseline (31-40%)
+          // T wave: broader positive bump (40-58%)
+          else if (t > 0.40 && t < 0.58) v = 0.32 * Math.sin((t - 0.40) / 0.18 * Math.PI);
+          // Rest: baseline (58-100%)
+          pts.push(v);
+        }
+        return pts;
+      })();
+      const CYCLE = cycle.length;
+      let offset = 0; // scrolling offset into cycle
+
+      cvs.forEach((c) => {
+        const dpr = window.devicePixelRatio || 1;
+        const w = c.clientWidth, h = c.clientHeight;
+        c.width = Math.round(w * dpr);
+        c.height = Math.round(h * dpr);
+        const ctx = c.getContext('2d');
+        ctx.scale(dpr, dpr);
+        c._draw = () => {
+          ctx.clearRect(0, 0, w, h);
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = 2;
+          ctx.lineJoin = 'round';
+          ctx.shadowColor = accent;
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          const base = h / 2;
+          const amp = h * 0.40;
+          for (let x = 0; x < w; x++) {
+            // Each pixel maps to a point in the cycling waveform; offset scrolls left over time
+            const idx = Math.floor(offset + (x / w) * CYCLE * 2.2) % CYCLE;
+            const v = cycle[idx];
+            const y = base - v * amp;
+            if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        };
+      });
+
+      let last = 0;
+      function tick(now) {
+        if (!stage.isConnected) return;
+        const dt = last ? (now - last) / 1000 : 0.016;
+        last = now;
+        // Scroll speed: ~68 bpm => one cycle per 0.88s
+        offset += dt * (CYCLE / 0.88);
+        if (offset > CYCLE) offset -= CYCLE;
+        cvs.forEach((c) => c._draw && c._draw());
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    })();
 
     let finished = false;
     function done() {
