@@ -1,7 +1,7 @@
 {
   "name": "training-plan-platform",
   "productName": "Sharp Fit",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "体能教练训练计划管理平台",
   "main": "main.js",
   "author": "Coach",
@@ -70,8 +70,8 @@
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        { "target": "AppImage", "arch": ["x64", "arm64"] },
+        { "target": "deb", "arch": ["x64", "arm64"] }
       ],
       "icon": "build/icon_1024.png",
       "category": "Sports",

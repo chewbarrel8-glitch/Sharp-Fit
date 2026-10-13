@@ -3,7 +3,7 @@
 // 分析框架参考：《NSCA-CPSS 美国国家体能协会运动表现与科学训练师认证指南》第5章 KPI · 第6章 建档与基准测试
 Views.kpi = (() => {
   const P = Views.profile;
-  const state = { athleteId: null, kpiDate: null, trendMetric: '', rmExId: null, rmRange: '' };   // kpiDate=null 表示最新数据；trendMetric=趋势图选中测试项目（''=全部指标，p:字段=体能指标，r:动作名=1RM）；rmExId/rmRange=1RM 看板动作/时间范围
+  const state = { athleteId: null, kpiDate: null, trendMetric: '', rmExId: null, rmRange: '', dashboardId: null };   // kpiDate=null 表示最新数据；trendMetric=趋势图选中测试项目（''=全部指标，p:字段=体能指标，r:动作名=1RM）；rmExId/rmRange=1RM 看板动作/时间范围；dashboardId=当前看板
 
   // 指标问号提示：悬停显示原生提示，点击弹出指标说明与计算方法弹窗（ref 为文献引用，拼接在末尾）
   const qTip = (t, ref) => { const full = ref ? `${t}　—　文献来源：${ref}` : t; return `<button type="button" class="qmark" aria-label="查看指标说明" title="${U.esc(full)}" data-tip="${U.esc(full)}">?</button>`; };
@@ -109,7 +109,7 @@ Views.kpi = (() => {
           data: zVals.map((z, i) => [i, +z.toFixed(2)]) },
         { name: '团队均值', type: 'line', data: [],
           markLine: { silent: true, symbol: 'none', lineStyle: { color: UI.tint('var(--color-ink)', 0.4), width: 1.5, type: 'solid' },
-            label: { show: true, formatter: '团队均值', color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, position: 'insideEndTop' }, data: [{ yAxis: 0 }] } }
+            label: { show: true, formatter: '团队均值', color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, position: 'insideStartBottom' }, data: [{ yAxis: 0 }] } }
       ]
     });
   }
@@ -206,9 +206,9 @@ Views.kpi = (() => {
         name: td.exName + ' 1RM', type: 'line', data: vals, smooth: true, showSymbol: true, symbolSize: 7,
         itemStyle: { color: UI.cssVar('var(--color-accent)') }, lineStyle: { color: UI.cssVar('var(--color-accent)'), width: 2.5 },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: UI.tint('var(--color-accent)', .22) }, { offset: 1, color: UI.tint('var(--color-accent)', 0) }]) },
-        label: { show: true, position: 'top', color: '#d8e0ee', fontSize: 10, formatter: '{c}' },
+        label: { show: true, position: 'top', color: UI.cssVar('var(--color-ink)'), fontSize: 10, formatter: '{c}' },
         markLine: vals.length >= 2 ? { silent: true, symbol: 'none', lineStyle: { color: UI.tint('var(--color-ink)', .3), type: 'dashed' },
-          label: { show: true, position: 'insideEndTop', formatter: '均值 ' + U.fmt(mean) + ' kg', color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 }, data: [{ yAxis: +mean.toFixed(1) }] } : undefined
+          label: { show: true, position: 'insideStartTop', formatter: '均值 ' + U.fmt(mean) + ' kg', color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10 }, data: [{ yAxis: +mean.toFixed(1) }] } : undefined
       }]
     });
   }
@@ -218,7 +218,7 @@ Views.kpi = (() => {
     if (!box) return;
     const chart = UI.chart(box);
     chart.setOption({
-      grid: { left: 92, right: 116, top: 10, bottom: 26 },
+      grid: { left: 92, right: 116, top: 24, bottom: 26 },
       tooltip: Object.assign({}, UI.tooltipCommon, {
         formatter: (ps) => { const p = Array.isArray(ps) ? ps[0] : ps; const r = rows[p.dataIndex];
           return `<b>${U.esc(r.m.label)}</b><br/>当前：<b>${r.cur}${r.m.unit}</b><br/>团队均值：${r.mean}${r.m.unit}<br/>CV：${r.cv} · SWC：${r.swc}<br/>Z：${r.z > 0 ? '+' : ''}${r.z.toFixed(2)}σ · 百分位：${r.pct}%`; } }),
@@ -227,10 +227,10 @@ Views.kpi = (() => {
       series: [{
         type: 'bar', barWidth: 14,
         data: rows.map((r) => ({ value: r.pct, itemStyle: { color: r.pct >= 75 ? UI.cssVar('var(--color-success)') : r.pct <= 25 ? UI.cssVar('var(--color-danger)') : UI.cssVar('var(--color-warning)'), borderRadius: [0, 7, 7, 0] } })),
-        label: { show: true, position: 'right', distance: 6, color: '#d8e0ee', fontSize: 11,
+        label: { show: true, position: 'right', distance: 6, color: UI.cssVar('var(--color-ink)'), fontSize: 11,
           formatter: (p) => { const r = rows[p.dataIndex]; return `${r.cur}${r.m.unit} · ${r.pct}%`; } },
         markLine: { silent: true, symbol: 'none', lineStyle: { color: UI.tint('var(--color-ink)', .35), type: 'dashed' },
-          label: { show: true, formatter: '均值 50', color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, position: 'insideEndTop' }, data: [{ xAxis: 50 }] }
+          label: { show: true, formatter: '均值 50', color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, position: 'start', distance: 4 }, data: [{ xAxis: 50 }] }
       }]
     });
   }
@@ -254,7 +254,7 @@ Views.kpi = (() => {
           const good = r.m.invert ? r.deltaCur < 0 : r.deltaCur > 0;
           return { value: +r.deltaCur.toFixed(1), itemStyle: { color: r.deltaCur === 0 ? UI.cssVar('var(--color-ink-muted)') : good ? UI.cssVar('var(--color-success)') : UI.cssVar('var(--color-danger)'), borderRadius: 7 } };
         }),
-        label: { show: true, position: 'right', distance: 6, color: '#d8e0ee', fontSize: 11,
+        label: { show: true, position: 'right', distance: 6, color: UI.cssVar('var(--color-ink)'), fontSize: 11,
           formatter: (p) => { const r = rows[p.dataIndex]; const word = r.deltaCur > 0 ? '增长' : r.deltaCur < 0 ? '下降' : '持平';
             return `${r.deltaCur > 0 ? '+' : ''}${r.deltaCur.toFixed(1)}% ${word}`; },
           textBorderColor: UI.tint('var(--color-background)', .92), textBorderWidth: 3 },
@@ -268,6 +268,13 @@ Views.kpi = (() => {
   function hasData(aid) {
     return P.getProfiles(aid).length > 0 || Object.keys(P.rmAsOf(aid)).length > 0;
   }
+  // Resolve the active KPI dashboard object (state.dashboardId overrides store.activeId)
+  function activeDashboard() {
+    const cfg = Store.data.settings.kpiDashboards;
+    if (!cfg || !Array.isArray(cfg.items) || !cfg.items.length) return null;
+    const id = state.dashboardId || cfg.activeId;
+    return cfg.items.find((it) => it.id === id) || cfg.items[0];
+  }
   function renderKpi(v) {
     const el = v.querySelector('#kpiBody');
     const ath = Store.data.athletes.find((a) => a.id === state.athleteId);
@@ -279,7 +286,6 @@ Views.kpi = (() => {
     const aths = P.planAths();
     const profiles = P.getProfiles(ath.id);
     const rmA = P.rmAsOf(ath.id, refDate);
-    const parts = [];
 
     // ① KPI 分析看板（动态指标总表：1RM 全部已测动作 + 体能 + 身体成分/平衡 + 自定义，去重后逐一分析）
     const kpiRows = P.allMetrics().filter((m) => P.getMetric(ath.id, m, refDate) != null).map((m) => {
@@ -299,31 +305,6 @@ Views.kpi = (() => {
       }
       return { m, cur, mean, cv, swc, pct, z, deltaCur };
     });
-    // ① KPI 分析看板（图形化：团队百分位横条 + 基线→当前变化正负横条；明细进 tooltip）
-    if (kpiRows.length) {
-      const deltaRows = kpiRows.filter((r) => r.deltaCur != null);
-      const h = Math.max(220, kpiRows.length * 26 + 70);
-      parts.push(`
-        <div class="card" id="kpiBoard" style="margin-bottom:12px">
-          <div class="card-title"><h3>KPI 分析看板</h3><span class="sub">${refDate ? U.md(refDate) + ' 时点' : ''}</span></div>
-          <div class="grid2" style="align-items:start">
-            <div>
-              <div class="chart-cap">团队百分位<span class="ctx">100 = 团队领先</span>${qTip('百分位=该运动员当前值在团队中的相对位置（0–100）；条端标注「当前值 · 百分位」。悬停查看团队均值 / CV / SWC / Z 明细', refTxt('hopkins09', 'hopkins00'))}</div>
-              <div class="chart" id="chKpiPct" style="height:${h}px"></div>
-            </div>
-            ${deltaRows.length ? `
-            <div>
-              <div class="chart-cap">基线 → 当前变化<span class="ctx">↑ 增长 / ↓ 下降</span>${qTip('Δ% =（当前值 − 基线值）÷ 基线值。绿色=提升、红色=退步；Δ% 超过 SWC（最小有意义变化）表示变化具有实际意义而非测量噪声', refTxt('hopkins09', 'hopkins00'))}</div>
-              <div class="chart" id="chKpiDelta" style="height:${h}px"></div>
-            </div>` : `
-            <div>
-              <div class="chart-cap">基线 → 当前变化</div>
-              <p class="hint" style="padding:36px 10px;text-align:center;border:1px dashed var(--border);border-radius:8px">各指标需 ≥2 次记录后显示变化方向</p>
-            </div>`}
-          </div>
-        </div>`);
-    }
-
     // ①b 1RM 力量变化看板（动作 + 时间范围筛选；跟随顶部运动员下拉切换）
     const RM_RANGES = [['', '全部时间'], ['4', '近 4 周'], ['8', '近 8 周'], ['12', '近 12 周'], ['24', '近 24 周'], ['52', '近 1 年']];
     const rmStore = (Store.data.athleteRm || {})[ath.id] || {};
@@ -332,6 +313,7 @@ Views.kpi = (() => {
       const hist = ((rmStore[exId] || {}).history || []).filter((h) => h && h.value && h.date);
       return ex && hist.length ? { ex, hist } : null;
     }).filter(Boolean).sort((a, b) => a.ex.name.localeCompare(b.ex.name, 'zh'));
+    let rmWidgetData = null;
     if (rmExOpts.length) {
       if (!state.rmExId || !rmExOpts.some((o) => o.ex.id === state.rmExId)) state.rmExId = rmExOpts[0].ex.id;
       if (!RM_RANGES.some((r) => r[0] === state.rmRange)) state.rmRange = '';
@@ -340,81 +322,33 @@ Views.kpi = (() => {
       const pts = opt.hist.filter((h) => !cutoff || h.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date));
       const first = pts.length ? pts[0].value : null, last = pts.length ? pts[pts.length - 1].value : null;
       const delta = pts.length >= 2 ? Calc.deltaPct(last, first) : null;
-      parts.push(`
-        <div class="card" id="kpiRmBoard" style="margin-bottom:12px">
-          <div class="card-title"><h3>1RM 力量变化</h3>
-            <div class="row" style="gap:10px;align-items:center">
-              <span class="sub">${pts.length ? `共 ${pts.length} 次记录${delta != null ? ` · ${first} → ${last} kg · ${delta > 0 ? '+' : ''}${delta.toFixed(1)}%` : ''}` : '该时间范围内暂无记录'}</span>
-              <select class="sel" id="rmChartEx" style="width:150px">${rmExOpts.map((o) => `<option value="${o.ex.id}" ${o.ex.id === state.rmExId ? 'selected' : ''}>${U.esc(o.ex.name)}</option>`).join('')}</select>
-              <select class="sel" id="rmChartRange" style="width:110px">${RM_RANGES.map((r) => `<option value="${r[0]}" ${state.rmRange === r[0] ? 'selected' : ''}>${r[1]}</option>`).join('')}</select>
-            </div>
-          </div>
-          ${pts.length ? `<div class="chart" id="chRmTrend" style="height:260px"></div>` : `<p class="hint" style="padding:26px;text-align:center;border:1px dashed var(--border);border-radius:8px">该时间范围内暂无「${U.esc(opt.ex.name)}」1RM 记录——更换时间范围或动作</p>`}
-        </div>`);
+      rmWidgetData = { opt, pts, delta, first, last };
       v.__rmTrendData = { pts, exName: opt.ex.name };
     }
 
-    // ② 雷达图 + Z 分数偏差图（并排；各自有数据才渲染）
+    // ② 雷达图 + Z 分数偏差图可用性
     const radarOk = P.allMetrics().filter((m) => P.getMetric(ath.id, m, refDate) != null).length >= 3;
     const zItems = aths.length >= 2 ? P.allMetrics().filter((m) => P.teamValues(aths, m, refDate).length >= 2 && P.getMetric(ath.id, m, refDate) != null) : [];
-    if (radarOk || zItems.length) {
-      parts.push(`
-        <div class="${radarOk && zItems.length ? 'grid2' : ''}" style="margin-bottom:12px;align-items:start">
-          ${radarOk ? `<div class="card"><div class="card-title"><h3>综合能力雷达图</h3><span class="sub">Z分数映射 · 50=团队均值</span></div><div class="chart" id="chRadar" style="height:320px"></div></div>` : ''}
-          ${zItems.length ? `<div class="card"><div class="card-title"><h3>Z 分数偏差图</h3><span class="sub">相对团队均值 · 0=团队水平</span></div><div class="chart" id="chZBar" style="height:320px"></div></div>` : ''}
-        </div>`);
-    }
 
-    // ③ FMS 功能性动作筛查（有 FMS 数据才渲染：个人雷达图 + 总分/风险面板）
+    // ③ FMS 功能性动作筛查数据
     const fRecs = P.fmsRecs(ath.id, refDate);
-    if (fRecs.length) {
-      const cur = fRecs[fRecs.length - 1];
-      const base = fRecs.length > 1 ? fRecs[0] : null;
-      const total = P.fmsTotal(cur.fms);
-      const baseTotal = base && base !== cur ? P.fmsTotal(base.fms) : null;
-      const asymmKeys = cur.fmsAsymm || [];
-      const tColor = total > 14 ? UI.cssVar('var(--color-success)') : total === 14 ? UI.cssVar('var(--color-warning)') : UI.cssVar('var(--color-danger)');
-      parts.push(`
-        <div class="card" id="kpiFms" style="margin-bottom:12px">
-          <div class="card-title"><h3>FMS 功能性动作筛查</h3><span class="sub">7 项动作模式 · 每项 0–3 分 · ${U.md(cur.date)}</span></div>
-          <div class="grid2" style="align-items:start">
-            <div class="chart" id="chFms" style="height:300px"></div>
-            <div style="padding:4px 2px">
-              <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
-                <span class="chip" style="font-size:14px;padding:6px 14px;color:${tColor};border-color:${tColor}">总分 <b>${total}</b>/21</span>
-                ${baseTotal != null && baseTotal !== total ? `<span class="hint">基线 ${baseTotal} → ${total > baseTotal ? '+' : ''}${total - baseTotal}</span>` : ''}
-              </div>
-              ${total <= 14 ? `<div class="hint" style="color:var(--color-danger);margin-top:8px">⚠ 总分 ≤14：提示损伤风险升高，建议先补动作质量再上负荷</div>` : ''}
-              ${asymmKeys.length ? `<div class="hint" style="margin-top:8px;color:var(--color-warning)">⚠ 不对称：${asymmKeys.map((k) => (P.FMS_TESTS.find((t) => t.key === k) || {}).label || k).join(' · ')}（宜单侧补差）</div>` : ''}
-              <div class="tbl-wrap" style="margin-top:10px">
-                <table class="tbl" style="font-size:12px">
-                  <thead><tr><th>动作模式</th><th class="r">最新得分</th>${base ? '<th class="r">基线</th>' : ''}</tr></thead>
-                  <tbody>
-                    ${P.FMS_TESTS.map((t) => {
-                      const v = cur.fms[t.key];
-                      const bv = base ? base.fms[t.key] : null;
-                      return `<tr><td>${t.label}</td><td class="r num" style="${v != null && v <= 1 ? 'color:var(--color-danger);font-weight:700' : ''}">${v != null ? v : '—'}</td>${base ? `<td class="r num">${bv != null ? bv : '—'}</td>` : ''}</tr>`;
-                    }).join('')}
-                  </tbody>
-                </table>
-              </div>
-              <div class="hint" style="margin-top:10px;line-height:1.7">3=标准完成 · 2=完成有代偿 · 1=无法完成 · 0=疼痛</div>
-            </div>
-          </div>
-        </div>`);
-    }
+    const fmsCur = fRecs.length ? fRecs[fRecs.length - 1] : null;
+    const fmsBase = fRecs.length > 1 ? fRecs[0] : null;
+    const fmsTotal = fmsCur ? P.fmsTotal(fmsCur.fms) : null;
+    const fmsBaseTotal = fmsBase && fmsBase !== fmsCur ? P.fmsTotal(fmsBase.fms) : null;
 
-    // ④ 纵向追踪趋势（≥2 次记录才渲染）
+    // ④ 纵向追踪趋势数据（≥2 次记录才可用）
     const rmHistCount = Object.keys(rmA).reduce((n, k) => n + ((rmA[k] && rmA[k].history || []).length), 0);
-    if (profiles.length >= 2 || rmHistCount >= 2) {
-      const allChanges = profiles.length >= 2 ? P.allMetrics().filter((m) => m.source === 'profile' || m.source === 'custom').map((m) => {
-        const vals = profiles.map((p) => P.profileVal(p, m)).filter((v) => v != null);   // 指标缺测的档案不阻断该指标趋势
+    const trendOk = profiles.length >= 2 || rmHistCount >= 2;
+    let allChanges = [], rmTrend = null, rmOpts = [];
+    if (trendOk) {
+      allChanges = profiles.length >= 2 ? P.allMetrics().filter((m) => m.source === 'profile' || m.source === 'custom').map((m) => {
+        const vals = profiles.map((p) => P.profileVal(p, m)).filter((v2) => v2 != null);   // 指标缺测的档案不阻断该指标趋势
         if (vals.length < 2) return null;
         const first = vals[0], last = vals[vals.length - 1];
         return { m, first, last, delta: m.invert ? first - last : last - first };
       }).filter(Boolean).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)) : [];
-      const changeRows = allChanges;   // 左侧小卡显示全部指标（不再只取前 4）
-      const rmTrend = (() => {
+      rmTrend = (() => {
         const series = Object.keys(rmA).map((exId) => {
           const h = rmA[exId] && rmA[exId].history;
           if (!h || h.length < 1) return null;
@@ -423,12 +357,68 @@ Views.kpi = (() => {
         }).filter(Boolean);
         return series.length ? series : null;
       })();
+      rmOpts = (rmTrend || []).filter((s) => s.dates.length >= 2);
       // 趋势图测试项目下拉：全部指标 / 体能+身体成分+自定义指标（≥2 次记录）/ 1RM 动作（≥2 次测定）；当前选择失效时重置
-      const rmOpts = (rmTrend || []).filter((s) => s.dates.length >= 2);
       const trendVals = [''].concat(allChanges.map((c) => 'p:' + c.m.field), rmOpts.map((s) => 'r:' + s.name));
       if (trendVals.indexOf(state.trendMetric) < 0) state.trendMetric = '';
-      parts.push(`
-        <div class="card" style="margin-bottom:12px">
+      v.__trendData = { profiles, changeRows: allChanges, rmTrend };
+    }
+
+    // ⑤ 团队综合评分排名数据（≥2 人才可用）
+    let rankRows = null;
+    if (aths.length >= 2) {
+      const labels = P.allMetrics().filter((m) => P.teamValues(aths, m, refDate).length >= 2);
+      rankRows = aths.map((a) => {
+        const zs = labels.map((m) => P.metricZ(a.id, aths, m, refDate));
+        const avgZ = U.avg(zs);
+        return { ath: a, score: +Math.max(0, Math.min(100, 50 + avgZ * 16.67)).toFixed(1), avgZ: +avgZ.toFixed(2) };
+      }).sort((a, b) => b.score - a.score).map((s) => {
+        const labels2 = P.allMetrics().filter((m) => P.teamValues(aths, m, refDate).length >= 2);
+        const athLabels = labels2.map((m) => ({ m, z: P.metricZ(s.ath.id, aths, m, refDate) })).sort((a, b) => b.z - a.z);
+        return Object.assign({}, s, { top3: athLabels.slice(0, 3).map((x) => x.m.label), bot3: athLabels.slice(-3).reverse().map((x) => x.m.label) });
+      });
+    }
+
+    // ---------- 组件字典：按看板配置过滤渲染 ----------
+    const tile = (wid, sz, label, val, unit, note) => `<section class="card ld-widget ld-kpi" data-wid="${wid}" data-size="${sz}"><div class="load-metric"><div class="k">${label}</div><div class="v">${val}<small>${unit}</small></div><div class="d">${note}</div></div></section>`;
+    const chartSec = (wid, sz, title, ctx, tip, chartId, h) => `<section class="card ld-widget ld-chart" data-wid="${wid}" data-size="${sz}"><div class="chart-cap">${title}${ctx ? `<span class="ctx">${ctx}</span>` : ''}${tip || ''}</div><div class="chart" id="${chartId}" style="height:${h}px"></div></section>`;
+    const h = Math.max(220, kpiRows.length * 26 + 70);
+    const deltaRows = kpiRows.filter((r) => r.deltaCur != null);
+    const W = {
+      m_pct: (sz) => !kpiRows.length ? '' : tile('m_pct', sz, '平均百分位', U.fmt(Math.round(U.avg(kpiRows.map((r) => r.pct)))), '%', `共 ${kpiRows.length} 项已测指标`),
+      m_lead: (sz) => !kpiRows.length ? '' : tile('m_lead', sz, '团队领先项数', kpiRows.filter((r) => r.pct >= 75).length, '项', '百分位 ≥ 75 = 团队领先'),
+      m_gain: (sz) => !kpiRows.length ? '' : tile('m_gain', sz, '显著进步项数', kpiRows.filter((r) => r.deltaCur != null && r.deltaCur > 0 && r.swc !== '—' && Math.abs(r.deltaCur) >= parseFloat(r.swc)).length, '项', 'Δ% 超 SWC · 有意义进步'),
+      m_fms: (sz) => !fmsCur ? '' : tile('m_fms', sz, 'FMS 总分', fmsTotal, '/21', U.md(fmsCur.date) + (fmsTotal <= 14 ? ' · 风险偏高' : ' · 正常')),
+      c_pct: (sz) => !kpiRows.length ? '' : chartSec('c_pct', sz, '团队百分位', '100 = 团队领先', qTip('百分位=该运动员当前值在团队中的相对位置（0–100）；条端标注「当前值 · 百分位」。悬停查看团队均值 / CV / SWC / Z 明细', refTxt('hopkins09', 'hopkins00')), 'chKpiPct', h),
+      c_delta: (sz) => !kpiRows.length ? '' : (deltaRows.length
+        ? chartSec('c_delta', sz, '基线 → 当前变化', '↑ 增长 / ↓ 下降', qTip('Δ% =（当前值 − 基线值）÷ 基线值。绿色=提升、红色=退步；Δ% 超过 SWC（最小有意义变化）表示变化具有实际意义而非测量噪声', refTxt('hopkins09', 'hopkins00')), 'chKpiDelta', h)
+        : `<section class="card ld-widget ld-chart" data-wid="c_delta" data-size="${sz}"><div class="chart-cap">基线 → 当前变化</div><p class="hint" style="padding:36px 10px;text-align:center;border:1px dashed var(--border);border-radius:8px">各指标需 ≥2 次记录后显示变化方向</p></section>`),
+      c_zbar: (sz) => !zItems.length ? '' : chartSec('c_zbar', sz, 'Z 分数偏差图', '相对团队均值 · 0=团队水平', '', 'chZBar', 320),
+      c_rank: (sz) => !rankRows ? '' : `<section class="card ld-widget" data-wid="c_rank" data-size="${sz}">
+          <div class="card-title"><h3>团队综合评分排名</h3><span class="sub">Z分数均值映射 · 50=团队均值${refDate ? ' · ' + U.md(refDate) + ' 时点' : ''}</span></div>
+          <div style="overflow-x:auto"><table class="tbl">
+            <thead><tr><th>排名</th><th>运动员</th><th class="r">综合分</th><th class="r">Z均值</th><th>优势项</th><th>劣势项</th></tr></thead>
+            <tbody>${rankRows.map((s, i) => `<tr ${s.ath.id === state.athleteId ? 'style="background:color-mix(in oklch, var(--color-info) 6%, transparent)"' : ''}>
+                <td class="num"><b>#${i + 1}</b></td>
+                <td><b>${U.esc(s.ath.name)}</b></td>
+                <td class="r num"><b style="color:${s.score >= 60 ? UI.cssVar('var(--color-success)') : s.score <= 40 ? UI.cssVar('var(--color-danger)') : UI.cssVar('var(--color-warning)')}">${s.score}</b></td>
+                <td class="r num" style="color:${s.avgZ > 0.5 ? UI.cssVar('var(--color-success)') : s.avgZ < -0.5 ? UI.cssVar('var(--color-danger)') : UI.cssVar('var(--color-ink-muted)')}">${s.avgZ > 0 ? '+' : ''}${s.avgZ.toFixed(2)}σ</td>
+                <td class="hint">${s.top3.join(' · ')}</td>
+                <td class="hint" style="color:var(--color-danger)">${s.bot3.join(' · ')}</td>
+              </tr>`).join('')}</tbody>
+          </table></div>
+        </section>`,
+      c_rm: (sz) => !rmWidgetData ? '' : `<section class="card ld-widget ld-chart" data-wid="c_rm" data-size="${sz}">
+          <div class="card-title"><h3>1RM 力量变化</h3>
+            <div class="row" style="gap:10px;align-items:center">
+              <span class="sub">${rmWidgetData.pts.length ? `共 ${rmWidgetData.pts.length} 次记录${rmWidgetData.delta != null ? ` · ${rmWidgetData.first} → ${rmWidgetData.last} kg · ${rmWidgetData.delta > 0 ? '+' : ''}${rmWidgetData.delta.toFixed(1)}%` : ''}` : '该时间范围内暂无记录'}</span>
+              <select class="sel" id="rmChartEx" style="width:150px">${rmExOpts.map((o) => `<option value="${o.ex.id}" ${o.ex.id === state.rmExId ? 'selected' : ''}>${U.esc(o.ex.name)}</option>`).join('')}</select>
+              <select class="sel" id="rmChartRange" style="width:110px">${RM_RANGES.map((r) => `<option value="${r[0]}" ${state.rmRange === r[0] ? 'selected' : ''}>${r[1]}</option>`).join('')}</select>
+            </div>
+          </div>
+          ${rmWidgetData.pts.length ? `<div class="chart" id="chRmTrend" style="height:260px"></div>` : `<p class="hint" style="padding:26px;text-align:center;border:1px dashed var(--border);border-radius:8px">该时间范围内暂无「${U.esc(rmWidgetData.opt.ex.name)}」1RM 记录——更换时间范围或动作</p>`}
+        </section>`,
+      c_trend: (sz) => !trendOk ? '' : `<section class="card ld-widget" data-wid="c_trend" data-size="${sz}">
           <div class="card-title"><h3>纵向追踪趋势</h3>
             <div class="row" style="gap:10px;align-items:center">
               <span class="sub">基线 → 当前 · Δ% 变化幅度</span>
@@ -440,9 +430,9 @@ Views.kpi = (() => {
             </div>
           </div>
           <div style="display:flex;gap:12px;align-items:flex-start">
-            ${(changeRows.length || rmOpts.length) ? `<div style="width:220px;flex-shrink:0;max-height:280px;overflow-y:auto">
+            ${(allChanges.length || rmOpts.length) ? `<div style="width:220px;flex-shrink:0;max-height:280px;overflow-y:auto">
               <div style="display:flex;flex-direction:column;gap:6px">
-                ${changeRows.map((cr) => {
+                ${allChanges.map((cr) => {
                   const deltaPct = Calc.deltaPct(cr.last, cr.first);
                   const good = cr.m.invert ? deltaPct < 0 : deltaPct > 0;
                   const color = deltaPct === 0 ? UI.cssVar('var(--color-ink-muted)') : Math.abs(deltaPct) <= 1 ? UI.cssVar('var(--color-warning)') : good ? UI.cssVar('var(--color-success)') : UI.cssVar('var(--color-danger)');
@@ -474,54 +464,59 @@ Views.kpi = (() => {
             </div>` : ''}
             <div style="flex:1"><div class="chart" id="chTrend" style="height:230px"></div></div>
           </div>
-        </div>`);
-      v.__trendData = { profiles, changeRows, rmTrend };
-    }
+        </section>`,
+      c_radar: (sz) => !radarOk ? '' : chartSec('c_radar', sz, '综合能力雷达图', 'Z分数映射 · 50=团队均值', '', 'chRadar', 320),
+      c_fms: (sz) => !fmsCur ? '' : (() => {
+        const asymmKeys = fmsCur.fmsAsymm || [];
+        const tColor = fmsTotal > 14 ? UI.cssVar('var(--color-success)') : fmsTotal === 14 ? UI.cssVar('var(--color-warning)') : UI.cssVar('var(--color-danger)');
+        return `<section class="card ld-widget" data-wid="c_fms" data-size="${sz}">
+          <div class="card-title"><h3>FMS 功能性动作筛查</h3><span class="sub">7 项动作模式 · 每项 0–3 分 · ${U.md(fmsCur.date)}</span></div>
+          <div class="grid2" style="align-items:start">
+            <div class="chart" id="chFms" style="height:300px"></div>
+            <div style="padding:4px 2px">
+              <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+                <span class="chip" style="font-size:14px;padding:6px 14px;color:${tColor};border-color:${tColor}">总分 <b>${fmsTotal}</b>/21</span>
+                ${fmsBaseTotal != null && fmsBaseTotal !== fmsTotal ? `<span class="hint">基线 ${fmsBaseTotal} → ${fmsTotal > fmsBaseTotal ? '+' : ''}${fmsTotal - fmsBaseTotal}</span>` : ''}
+              </div>
+              ${fmsTotal <= 14 ? `<div class="hint" style="color:var(--color-danger);margin-top:8px">⚠ 总分 ≤14：提示损伤风险升高，建议先补动作质量再上负荷</div>` : ''}
+              ${asymmKeys.length ? `<div class="hint" style="margin-top:8px;color:var(--color-warning)">⚠ 不对称：${asymmKeys.map((k) => (P.FMS_TESTS.find((t) => t.key === k) || {}).label || k).join(' · ')}（宜单侧补差）</div>` : ''}
+              <div class="tbl-wrap" style="margin-top:10px">
+                <table class="tbl" style="font-size:12px">
+                  <thead><tr><th>动作模式</th><th class="r">最新得分</th>${fmsBase ? '<th class="r">基线</th>' : ''}</tr></thead>
+                  <tbody>
+                    ${P.FMS_TESTS.map((t) => {
+                      const v2 = fmsCur.fms[t.key];
+                      const bv = fmsBase ? fmsBase.fms[t.key] : null;
+                      return `<tr><td>${t.label}</td><td class="r num" style="${v2 != null && v2 <= 1 ? 'color:var(--color-danger);font-weight:700' : ''}">${v2 != null ? v2 : '—'}</td>${fmsBase ? `<td class="r num">${bv != null ? bv : '—'}</td>` : ''}</tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+              <div class="hint" style="margin-top:10px;line-height:1.7">3=标准完成 · 2=完成有代偿 · 1=无法完成 · 0=疼痛</div>
+            </div>
+          </div>
+        </section>`;
+      })()
+    };
 
-    // ⑤ 团队综合评分排名（≥2 人才渲染）
-    if (aths.length >= 2) {
-      const labels = P.allMetrics().filter((m) => P.teamValues(aths, m, refDate).length >= 2);
-      const scored = aths.map((a) => {
-        const zs = labels.map((m) => P.metricZ(a.id, aths, m, refDate));
-        const avgZ = U.avg(zs);
-        return { ath: a, score: +Math.max(0, Math.min(100, 50 + avgZ * 16.67)).toFixed(1), avgZ: +avgZ.toFixed(2) };
-      }).sort((a, b) => b.score - a.score);
-      parts.push(`
-        <div class="card">
-          <div class="card-title"><h3>团队综合评分排名</h3><span class="sub">Z分数均值映射 · 50=团队均值${refDate ? ' · ' + U.md(refDate) + ' 时点' : ''}</span></div>
-          <div style="overflow-x:auto"><table class="tbl">
-            <thead><tr><th>排名</th><th>运动员</th><th class="r">综合分</th><th class="r">Z均值</th><th>优势项</th><th>劣势项</th></tr></thead>
-            <tbody>${scored.map((s, i) => {
-              const athLabels = labels.map((m) => ({ m, z: P.metricZ(s.ath.id, aths, m, refDate) })).sort((a, b) => b.z - a.z);
-              const top3 = athLabels.slice(0, 3).map((x) => x.m.label);
-              const bot3 = athLabels.slice(-3).reverse().map((x) => x.m.label);
-              return `<tr ${s.ath.id === state.athleteId ? 'style="background:color-mix(in oklch, var(--color-info) 6%, transparent)"' : ''}>
-                <td class="num"><b>#${i + 1}</b></td>
-                <td><b>${U.esc(s.ath.name)}</b></td>
-                <td class="r num"><b style="color:${s.score >= 60 ? UI.cssVar('var(--color-success)') : s.score <= 40 ? UI.cssVar('var(--color-danger)') : UI.cssVar('var(--color-warning)')}">${s.score}</b></td>
-                <td class="r num" style="color:${s.avgZ > 0.5 ? UI.cssVar('var(--color-success)') : s.avgZ < -0.5 ? UI.cssVar('var(--color-danger)') : UI.cssVar('var(--color-ink-muted)')}">${s.avgZ > 0 ? '+' : ''}${s.avgZ.toFixed(2)}σ</td>
-                <td class="hint">${top3.join(' · ')}</td>
-                <td class="hint" style="color:var(--color-danger)">${bot3.join(' · ')}</td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table></div>
-        </div>`);
-    }
+    // Render widgets in dashboard order; unknown ids skipped
+    const dash = activeDashboard();
+    const widgets = (dash && Array.isArray(dash.widgets) && dash.widgets.length) ? dash.widgets : Store.defaultKpiDashboards().items[0].widgets;
+    const hasWidget = (id) => widgets.some((w) => w.id === id);
+    const widgetHtml = widgets.map((w) => (W[w.id] ? W[w.id](w.size) : '')).join('');
 
-    if (!parts.length) {
-      parts.push(`<div class="card"><p class="hint" style="padding:26px;text-align:center">该运动员暂无体能分析数据——前往 <a href="#/profile" style="color:var(--accent)">运动员档案</a> 点击「＋ 添加体能数据」录入后，此处自动生成分析</p></div>`);
+    if (!widgetHtml.trim()) {
+      el.innerHTML = `<div class="card"><p class="hint" style="padding:26px;text-align:center">该运动员暂无体能分析数据——前往 <a href="#/profile" style="color:var(--accent)">运动员档案</a> 点击「＋ 添加体能数据」录入后，此处自动生成分析</p></div>`;
+      return;
     }
+    el.innerHTML = `<div class="ld-grid">${widgetHtml}</div>`;
 
-    el.innerHTML = parts.join('');
-
-    // 图表初始化
-    if (kpiRows.length) {
-      initKpiPct(el.querySelector('#chKpiPct'), kpiRows);
-      initKpiDelta(el.querySelector('#chKpiDelta'), kpiRows.filter((r) => r.deltaCur != null));
-    }
+    // 图表初始化（按看板组件守卫）
+    if (hasWidget('c_pct') && kpiRows.length) initKpiPct(el.querySelector('#chKpiPct'), kpiRows);
+    if (hasWidget('c_delta') && deltaRows.length) initKpiDelta(el.querySelector('#chKpiDelta'), deltaRows);
     // 1RM 力量变化看板：动作 / 时间范围筛选
     const rmt = v.__rmTrendData;
-    if (rmt) {
+    if (rmt && hasWidget('c_rm')) {
       const exSel = el.querySelector('#rmChartEx');
       if (exSel) exSel.onchange = (e) => { state.rmExId = e.target.value; mount(); };
       const rgSel = el.querySelector('#rmChartRange');
@@ -529,11 +524,11 @@ Views.kpi = (() => {
       if (rmt.pts.length) initRmTrend(el.querySelector('#chRmTrend'), rmt);
     }
     delete v.__rmTrendData;
-    if (radarOk) initRadar(el.querySelector('#chRadar'), ath, aths, refDate);
-    if (zItems.length) initZBar(el.querySelector('#chZBar'), ath, aths, zItems, refDate);
-    if (fRecs.length) initFms(el.querySelector('#chFms'), fRecs);
+    if (hasWidget('c_radar') && radarOk) initRadar(el.querySelector('#chRadar'), ath, aths, refDate);
+    if (hasWidget('c_zbar') && zItems.length) initZBar(el.querySelector('#chZBar'), ath, aths, zItems, refDate);
+    if (hasWidget('c_fms') && fRecs.length) initFms(el.querySelector('#chFms'), fRecs);
     const td = v.__trendData;
-    if (td) {
+    if (td && hasWidget('c_trend')) {
       const tsel = el.querySelector('#trendSel');
       if (tsel) tsel.onchange = (e) => { state.trendMetric = e.target.value; mount(); };
       // 左侧指标小卡：点击切换图表到该指标
@@ -567,7 +562,19 @@ Views.kpi = (() => {
     const rmN = ath ? Object.keys(P.rmAsOf(ath.id, state.kpiDate)).length : 0;
     const age = ath && ath.birth ? Math.floor((Date.now() - new Date(ath.birth).getTime()) / (365.25 * 24 * 3600 * 1000)) : null;
 
+    // Dashboard chips: built-in + user layouts, active highlights; trailing add/edit/delete
+    const dashCfg = Store.data.settings.kpiDashboards;
+    const dashboards = (dashCfg && Array.isArray(dashCfg.items)) ? dashCfg.items : [];
+    const activeDashId = (state.dashboardId || (dashCfg && dashCfg.activeId)) || (dashboards[0] && dashboards[0].id);
+    const chipRow = dashboards.map((d) => {
+      const isActive = d.id === activeDashId;
+      const scopeCls = d.scope === 'team' ? 'is-team' : 'is-personal';
+      return `<button type="button" class="ld-chip ${isActive ? 'on' : ''} ${scopeCls}" data-dash="${d.id}" title="${U.esc(d.name)}">${U.esc(d.name)}${d.isDefault ? '<span class="ld-chip-star">★</span>' : ''}</button>`;
+    }).join('') + `<button type="button" class="ld-chip-add" id="kpiAddDash" title="新建看板">+</button><button type="button" class="ld-edit-cur" id="kpiEditCur" title="编辑当前看板">编辑</button>`
+      + (dashboards.find((d) => d.id === activeDashId && !d.isDefault) ? `<button type="button" class="ld-edit-cur ld-del-cur" id="kpiDelCur" title="删除当前看板">删除</button>` : '');
+
     v.innerHTML = `
+      <div class="ld-chips" id="kpiChips">${chipRow}</div>
       <div class="card" style="margin-bottom:12px">
         <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <div class="row" style="gap:12px">
@@ -597,6 +604,45 @@ Views.kpi = (() => {
     $('#kpiDate').onchange = (e) => { state.kpiDate = e.target.value || null; mount(); };
     $('#kpiReport').onclick = () => Views.kpiLab.open();
     $('#kpiImport').onclick = () => Views.importTest.open({ onImported: () => mount() });
+
+    // Dashboard chip interactions: switch persists to store; add/edit/delete delegate to settings modal
+    const openDashEditor = (id) => {
+      if (Views.settings && typeof Views.settings.editKpiDashboard === 'function') {
+        Views.settings.editKpiDashboard(id, () => { state.dashboardId = id; mount(v); });
+      }
+    };
+    $$('.ld-chip', v).forEach((b) => b.onclick = () => {
+      const id = b.dataset.dash;
+      if (id === activeDashId) return;
+      state.dashboardId = id;
+      if (dashCfg) { dashCfg.activeId = id; Store.save(); }
+      mount(v);
+    });
+    $('#kpiAddDash', v).onclick = () => {
+      if (!dashCfg) return;
+      const id = U.uid('d');
+      dashCfg.items.push({ id, name: '新看板 ' + (dashboards.length + 1), scope: 'personal', isDefault: false, widgets: [{ id: 'c_pct', size: 'primary' }, { id: 'c_rm', size: 'primary' }] });
+      dashCfg.activeId = id;
+      state.dashboardId = id;
+      Store.save();
+      openDashEditor(id);
+    };
+    $('#kpiEditCur', v).onclick = () => openDashEditor(activeDashId);
+    // Delete current dashboard (non-default only): confirm, splice, fall back to default
+    const delCur = $('#kpiDelCur', v);
+    if (delCur) delCur.onclick = () => {
+      const item = dashCfg.items.find((x) => x.id === activeDashId);
+      if (!item || item.isDefault) return;
+      UI.confirm(`确定删除看板「${item.name}」？删除后不可恢复。`, () => {
+        const idx = dashCfg.items.findIndex((x) => x.id === activeDashId);
+        if (idx >= 0) dashCfg.items.splice(idx, 1);
+        dashCfg.activeId = 'default';
+        state.dashboardId = 'default';
+        Store.save();
+        UI.toast('看板已删除', 'ok');
+        mount(v);
+      });
+    };
 
     renderKpi(v);
     // 指标问号点击 → 弹出说明与计算方法（事件委托，覆盖 KPI 看板全部问号）

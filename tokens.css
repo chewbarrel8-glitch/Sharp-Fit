@@ -1,29 +1,43 @@
-/* Sharp Fit · locked application tokens */
+/* Sharp Fit · Stadium Sulfur tokens
+   Cool graphite surfaces, warm bone ink, sulfur accent (sport-jersey gold).
+   Flat panels + hairline borders. Numbers carry the load. */
 :root {
-  --color-background: oklch(14% 0.014 264);
-  --color-background-elevated: oklch(17% 0.018 264);
-  --color-surface: oklch(19% 0.02 264);
-  --color-surface-raised: oklch(23% 0.025 264);
-  --color-surface-hover: oklch(27% 0.027 264);
-  --color-ink: oklch(93% 0.012 264);
-  --color-ink-muted: oklch(68% 0.025 264);
-  --color-ink-subtle: oklch(48% 0.02 264);
-  --color-border: oklch(29% 0.022 264);
-  --color-border-strong: oklch(38% 0.028 264);
-  --color-accent: oklch(94% 0.2 117);
-  --color-accent-deep: oklch(83% 0.19 117);
-  --color-accent-ink: oklch(17% 0.035 117);
-  --color-info: oklch(69% 0.13 250);
-  --color-success: oklch(78% 0.14 158);
-  --color-warning: oklch(81% 0.15 75);
-  --color-danger: oklch(68% 0.18 20);
-  --color-focus: oklch(86% 0.16 235);
-  --color-purple: oklch(74% 0.18 290);
+  /* —— Surfaces: cool graphite, slightly cyan-leaning for stadium-night feel —— */
+  --color-background: oklch(13% 0.014 250);
+  --color-background-elevated: oklch(16% 0.017 250);
+  --color-surface: oklch(20% 0.016 250);
+  --color-surface-raised: oklch(24% 0.018 250);
+  --color-surface-hover: oklch(28% 0.020 250);
 
+  /* —— Ink: warm bone white (old paper), tiered with cool desaturated greys —— */
+  --color-ink: oklch(94% 0.008 80);
+  --color-ink-muted: oklch(70% 0.020 250);
+  --color-ink-subtle: oklch(50% 0.018 250);
+
+  /* —— Borders: hairline cool —— */
+  --color-border: oklch(31% 0.018 250);
+  --color-border-strong: oklch(40% 0.024 250);
+
+  /* —— Accent · Stadium Sulfur —— */
+  --color-accent: oklch(82% 0.16 95);
+  --color-accent-deep: oklch(74% 0.16 95);
+  --color-accent-ink: oklch(15% 0.025 95);
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 14%, transparent);
+
+  /* —— Data & status —— */
+  --color-info: oklch(72% 0.10 200);
+  --color-success: oklch(72% 0.14 155);
+  --color-warning: oklch(80% 0.13 75);
+  --color-danger: oklch(64% 0.20 20);
+  --color-purple: oklch(70% 0.17 300);
+  --color-focus: oklch(70% 0.12 200);
+
+  /* —— Type: single system family, weight contrast does hierarchy —— */
   --font-display: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-mono: "SFMono-Regular", "Menlo", Consolas, "Liberation Mono", monospace;
 
+  /* —— Spacing scale —— */
   --space-3xs: 0.25rem;
   --space-2xs: 0.5rem;
   --space-xs: 0.75rem;
@@ -34,6 +48,7 @@
   --space-2xl: 4.5rem;
   --space-3xl: 7rem;
 
+  /* —— Type scale (tight) —— */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-md: 1rem;
@@ -42,11 +57,14 @@
   --text-2xl: 2rem;
   --text-display: clamp(2rem, 4vw, 3.5rem);
 
-  --radius-xs: 0.375rem;
-  --radius-input: 0.625rem;
-  --radius-card: 1rem;
+  /* —— Radius: one surface radius, one chip radius, pill for indicators —— */
+  --radius-xs: 0.25rem;
+  --radius-input: 0.375rem;
+  --radius-card: 0.5rem;
   --radius-pill: 999px;
   --rule-subtle: 1px;
+
+  /* —— Motion —— */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);

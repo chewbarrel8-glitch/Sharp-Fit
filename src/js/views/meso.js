@@ -429,10 +429,15 @@ Views.meso = (() => {
           <span class="goal-tag">当前训练目标</span>${curGoals.length ? U.goalChips(curGoals, 'primary') : '<span class="hint">暂未制定训练目标（请在「周期训练计划」页设置）</span>'}
         </div>
       </div>
-      <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px" id="mesoWeekTabs">
-        <span class="hint" style="flex:none">周期周数</span>
-        <span class="chip ${state.weekIdx == null ? 'volt' : ''}" data-wk="all" style="cursor:pointer" title="显示全部日期">全部</span>
-        ${weeks.map((w, i) => `<span class="chip ${state.weekIdx === i ? 'volt' : ''}" data-wk="${i}" style="cursor:pointer" title="${w.s} — ${w.e}">第${cnNum(i + 1)}周 <small style="opacity:.65">${U.md(w.s)}–${U.md(w.e)}</small></span>`).join('')}
+      <div class="wk-panel" id="mesoWeekTabs">
+        <div class="wk-panel-h">
+          <span class="wk-panel-t">周期周数</span>
+          <span class="wk-panel-sub">点击某一周，下方「每日安排」仅显示该周</span>
+        </div>
+        <div class="wk-strip">
+          <button type="button" class="wk-seg wk-all ${state.weekIdx == null ? 'on' : ''}" data-wk="all" title="显示全部日期"><b>全部</b><i>${nWeeks} 周</i></button>
+          ${weeks.map((w, i) => `<button type="button" class="wk-seg ${state.weekIdx === i ? 'on' : ''}" data-wk="${i}" title="${w.s} — ${w.e}"><b>第${cnNum(i + 1)}周</b><i>${U.md(w.s)}–${U.md(w.e)}</i></button>`).join('')}
+        </div>
       </div>
       <div class="card-title" style="margin:0 0 6px"><h3 style="font-size:14px">每日安排</h3><span class="sub">拖动滑杆调整当日 1RM% 负荷</span></div>
       <div class="daystrip merged" style="margin-bottom:16px">${dayChips.join('')}</div>

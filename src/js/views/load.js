@@ -1,7 +1,25 @@
 // 负荷管理页面：ACWR 仪表盘 · 个人/团队负荷看板
 // 运动员归属训练计划：名单/看板只统计当前计划运动员
 Views.load = (() => {
-  const state = { athleteId: null, mode: 'personal', weekView: 'strain', fltMesoId: 'all', fltMicroId: 'all', pieAthId: 'all', ovLevel: 'session', ovDate: U.today(), ovSesId: null, loadTab: 'detail', dateFrom: U.addDays(U.today(), -41), dateTo: U.today() };
+  const state = { athleteId: null, mode: 'personal', weekView: 'strain', fltMesoId: 'all', fltMicroId: 'all', pieAthId: 'all', ovLevel: 'session', ovDate: U.today(), ovSesId: null, loadTab: 'detail', dateFrom: U.addDays(U.today(), -41), dateTo: U.today(), dashboardId: null };
+
+  // Widget id → underlying chart element id (KPI cards have no inner id; matched via data-wid)
+  const WIDGET_ELEM_ID = {
+    g_acwr: 'loadAcwrGauge', g_tsb: 'loadTsbGauge',
+    c_daily: 'loadDailyChart', c_risk: 'loadRiskChart',
+    c_tonnage: 'loadTonnageChart', c_session: 'loadSessionChart',
+    c_distance: 'loadDistanceChart', c_work: 'loadWorkTimeChart',
+    d_type: 'loadTypeChart', d_time: 'loadTypeTimeChart'
+  };
+
+  // Resolve the active dashboard object (state.dashboardId overrides store.activeId)
+  function activeDashboard() {
+    const cfg = Store.data.settings.loadDashboards;
+    if (!cfg || !Array.isArray(cfg.items) || !cfg.items.length) return null;
+    const id = state.dashboardId || cfg.activeId;
+    return cfg.items.find((it) => it.id === id) || cfg.items.find((it) => it.id === 'default') || cfg.items[0];
+  }
+
   // 单一时期导航 → 对应分析内容
   const TAB_OF_LEVEL = { session: 'detail', day: 'detail', micro: 'micro', meso: 'micro' };
   let weekChart = null;   // 周负荷分析图表实例（切换视图时先销毁）
@@ -86,8 +104,13 @@ Views.load = (() => {
 
   // 仪表盘动态量程：值超出基准量程时按固定步长向外扩展，色带按绝对分界重算比例
   // → 指针永远落在刻度内（不再穿出色带），中心数字始终显示真值；步长固定保证跨人/跨时可比较
-  function tsbRange(tsb) {
-    return { min: Math.min(-50, Math.floor(tsb / 25) * 25), max: Math.max(25, Math.ceil(tsb / 25) * 25) };
+  // Standard TSB display window per Coggan/Banister consensus:
+  //   -100 (severe overtraining/data anomaly) → +50 (very fresh)
+  // Typical operating range: -50 to +25. Real TSB outside [-100,+50] almost always
+  // indicates an input data anomaly (e.g. sRPE × duration_minutes producing oversized TSS).
+  // The digital readout still shows the true value; the needle pegs at the boundary.
+  function tsbRange() {
+    return { min: -100, max: 50 };
   }
   function acwrRange(acwr) {
     return { min: 0, max: Math.max(2.5, acwr != null ? Math.ceil(acwr * 2) / 2 : 2.5) };
@@ -109,11 +132,14 @@ Views.load = (() => {
   // TSB 颜色与状态描述（与色带分界一致）
   function tsbState(tsb) {
     if (tsb == null || !Number.isFinite(Number(tsb))) return { color: UI.cssVar('var(--color-ink-muted)'), desc: '数据不足', cls: '' };
-    if (tsb > 25) return { color: UI.cssVar('var(--color-info)'), desc: '过于新鲜', cls: 'info' };
-    if (tsb > 5) return { color: UI.cssVar('var(--color-success)'), desc: '状态新鲜', cls: 'ok' };
-    if (tsb > -10) return { color: UI.cssVar('var(--color-warning)'), desc: '训练平衡', cls: 'warn' };
-    if (tsb > -30) return { color: UI.cssVar('var(--color-warning)'), desc: '积累疲劳', cls: 'warn' };
-    return { color: UI.cssVar('var(--color-danger)'), desc: '深度疲劳', cls: 'bad' };
+    // |TSB| > 100 almost always indicates a data anomaly (e.g. sRPE×duration_min
+    // producing oversized TSS). Flag this so the user knows the number is suspect.
+    const anomaly = Math.abs(tsb) > 100 ? ' · 数据异常' : '';
+    if (tsb > 25) return { color: UI.cssVar('var(--color-info)'), desc: '过于新鲜' + anomaly, cls: 'info' };
+    if (tsb > 5) return { color: UI.cssVar('var(--color-success)'), desc: '状态新鲜' + anomaly, cls: 'ok' };
+    if (tsb > -10) return { color: UI.cssVar('var(--color-warning)'), desc: '训练平衡' + anomaly, cls: 'warn' };
+    if (tsb > -30) return { color: UI.cssVar('var(--color-warning)'), desc: '积累疲劳' + anomaly, cls: 'warn' };
+    return { color: UI.cssVar('var(--color-danger)'), desc: '深度疲劳' + anomaly, cls: 'bad' };
   }
   // ACWR 色带绝对分界：<0.8 蓝、0.8~1.3 绿、1.3~1.5 黄、>1.5 红
   // 文献来源：Hulin BT, Gabbett TJ et al. (2014) Br J Sports Med 48(12):923-927；Gabbett TJ (2016) Br J Sports Med 50(5):273-280
@@ -122,7 +148,18 @@ Views.load = (() => {
   function renderHead(v) {
     const el = v.querySelector('#loadHead');
     const aths = planAths();
+    // Dashboard chips: built-in + user layouts, active highlights; last chip = +edit
+    const cfg = Store.data.settings.loadDashboards;
+    const dashboards = (cfg && Array.isArray(cfg.items)) ? cfg.items : [];
+    const activeId = (state.dashboardId || (cfg && cfg.activeId)) || (dashboards[0] && dashboards[0].id);
+    const chipRow = dashboards.map((d) => {
+      const isActive = d.id === activeId;
+      const scopeCls = d.scope === 'team' ? 'is-team' : 'is-personal';
+      return `<button type="button" class="ld-chip ${isActive ? 'on' : ''} ${scopeCls}" data-dash="${d.id}" title="${U.esc(d.name)}">${U.esc(d.name)}${d.isDefault ? '<span class="ld-chip-star">★</span>' : ''}</button>`;
+    }).join('') + `<button type="button" class="ld-chip-add" id="ldAddDash" title="新建看板">+</button><button type="button" class="ld-edit-cur" id="ldEditCur" title="编辑当前看板">编辑</button>`
+      + (dashboards.find((d) => d.id === activeId && !d.isDefault) ? `<button type="button" class="ld-edit-cur ld-del-cur" id="ldDelCur" title="删除当前看板">删除</button>` : '');
     el.innerHTML = `
+      <div class="ld-chips" id="ldChips">${chipRow}</div>
       <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div class="row" style="gap:16px;flex-wrap:wrap">
           <div class="field" style="margin:0"><label>视图模式</label>
@@ -144,7 +181,42 @@ Views.load = (() => {
     }
     el.querySelector('#modePersonal').onclick = () => { state.mode = 'personal'; mount(); };
     el.querySelector('#modeTeam').onclick = () => { state.mode = 'team'; mount(); };
+    // Switch active dashboard: persists to store and re-renders dashboard body only
+    $$('.ld-chip', el).forEach((b) => b.onclick = () => {
+      const id = b.dataset.dash;
+      if (id === activeId) return;
+      state.dashboardId = id;
+      if (cfg) { cfg.activeId = id; Store.save(); }
+      mount(v);
+    });
+    $('#ldAddDash', el).onclick = () => {
+      if (!cfg) return;
+      const id = U.uid('d');
+      const item = { id, name: '新看板 ' + (dashboards.length + 1), scope: state.mode, isDefault: false, widgets: [{ id: 'c_daily', size: 'primary' }, { id: 'c_risk', size: 'primary' }] };
+      cfg.items.push(item);
+      cfg.activeId = id;
+      state.dashboardId = id;
+      Store.save();
+      openDashboardEditor(id, v);
+    };
+    $('#ldEditCur', el).onclick = () => openDashboardEditor(activeId, v);
+    // Delete current dashboard (non-default only): confirm, splice, fall back to default
+    const delCur = $('#ldDelCur', el);
+    if (delCur) delCur.onclick = () => {
+      const item = cfg.items.find((x) => x.id === activeId);
+      if (!item || item.isDefault) return;
+      UI.confirm(`确定删除看板「${item.name}」？删除后不可恢复。`, () => {
+        const idx = cfg.items.findIndex((x) => x.id === activeId);
+        if (idx >= 0) cfg.items.splice(idx, 1);
+        cfg.activeId = 'default';
+        state.dashboardId = 'default';
+        Store.save();
+        UI.toast('看板已删除', 'ok');
+        mount(v);
+      });
+    };
   }
+
 
   // ---------- 负荷总览卡：本节课 / 日 / 小周期 / 中周期 四级 ----------
   // 个人模式按 state.athleteId；团队模式全队汇总
@@ -433,15 +505,15 @@ Views.load = (() => {
           axisLabel: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, distance: 8 },   // 正值=向色带外（ECharts gauge axisLabel.distance 正=向外、负=向内）
           title: { show: false },
           detail: { valueAnimation: true, offsetCenter: [0, '85%'],
-            formatter: (v) => `{val|${v}}\n{desc|${ai.desc}${ar.max > 2.5 ? ' · 超基准量程' : ''}}`,
-            rich: { val: { color: ai.color, fontSize: 22, fontWeight: 'bold', backgroundColor: UI.tint('var(--color-background)', .72), borderColor: UI.tint('var(--color-ink-muted)', .25), borderWidth: 1, borderRadius: 6, padding: [2, 8] },
-              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [3, 0, 0, 0] } } },
+            formatter: (v) => `{val|${v}}\n{desc|${ai.desc}}`,
+            rich: { val: { color: ai.color, fontSize: 20, fontWeight: 700 },
+              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [4, 0, 0, 0] } } },
           data: [{ value: acwr != null ? +acwr.toFixed(2) : 0, name: 'ACWR · ' + ai.desc }]
         }]
       });
       // TSB gauge（量程随超界值按 25 步长扩展，色带按文献分界 −30/−10/+5/+25 重算；深度疲劳也不会穿出刻度）
       const ts = tsbState(tsb);
-      const tr = tsbRange(tsb);
+      const tr = tsbRange();
       const tsbOver = tsb < tr.min || tsb > 25;
       const g2 = UI.chart(el.querySelector('#chTsbGauge'));
       g2.setOption({
@@ -464,9 +536,9 @@ Views.load = (() => {
           axisLabel: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, distance: 8 },   // 正值=向色带外（ECharts gauge axisLabel.distance 正=向外、负=向内）
           title: { show: false },
           detail: { valueAnimation: true, offsetCenter: [0, '85%'],
-            formatter: (v) => `{val|${v}}\n{desc|${ts.desc}${tsbOver ? ' · 超基准量程' : ''}}`,
-            rich: { val: { color: ts.color, fontSize: 22, fontWeight: 'bold', backgroundColor: UI.tint('var(--color-background)', .72), borderColor: UI.tint('var(--color-ink-muted)', .25), borderWidth: 1, borderRadius: 6, padding: [2, 8] },
-              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [3, 0, 0, 0] } } },
+            formatter: (v) => `{val|${v}}\n{desc|${ts.desc}}`,
+            rich: { val: { color: ts.color, fontSize: 20, fontWeight: 700 },
+              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [4, 0, 0, 0] } } },
           data: [{ value: Math.round(tsb), name: 'TSB · ' + ts.desc }]
         }]
       });
@@ -505,14 +577,14 @@ Views.load = (() => {
           axisLabel: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, distance: 8 },   // 正值=向色带外（ECharts gauge axisLabel.distance 正=向外、负=向内）
           title: { show: false },
           detail: { valueAnimation: true, offsetCenter: [0, '85%'],
-            formatter: (v) => `{val|${v}}\n{desc|${ai.desc}${ar.max > 2.5 ? ' · 超基准量程' : ''}}`,
-            rich: { val: { color: ai.color, fontSize: 22, fontWeight: 'bold', backgroundColor: UI.tint('var(--color-background)', .72), borderColor: UI.tint('var(--color-ink-muted)', .25), borderWidth: 1, borderRadius: 6, padding: [2, 8] },
-              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [3, 0, 0, 0] } } },
+            formatter: (v) => `{val|${v}}\n{desc|${ai.desc}}`,
+            rich: { val: { color: ai.color, fontSize: 20, fontWeight: 700 },
+              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [4, 0, 0, 0] } } },
           data: [{ value: acwr != null ? +acwr.toFixed(2) : 0, name: '团队 ACWR · ' + ai.desc }]
         }]
       });
       const ts = tsbState(tsb);
-      const tr = tsbRange(tsb);
+      const tr = tsbRange();
       const tsbOver = tsb < tr.min || tsb > 25;
       const g2 = UI.chart(el.querySelector('#chTsbGauge'));
       g2.setOption({
@@ -527,9 +599,9 @@ Views.load = (() => {
           axisLabel: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 10, distance: 8 },   // 正值=向色带外（ECharts gauge axisLabel.distance 正=向外、负=向内）
           title: { show: false },
           detail: { valueAnimation: true, offsetCenter: [0, '85%'],
-            formatter: (v) => `{val|${v}}\n{desc|${ts.desc}${tsbOver ? ' · 超基准量程' : ''}}`,
-            rich: { val: { color: ts.color, fontSize: 22, fontWeight: 'bold', backgroundColor: UI.tint('var(--color-background)', .72), borderColor: UI.tint('var(--color-ink-muted)', .25), borderWidth: 1, borderRadius: 6, padding: [2, 8] },
-              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [3, 0, 0, 0] } } },
+            formatter: (v) => `{val|${v}}\n{desc|${ts.desc}}`,
+            rich: { val: { color: ts.color, fontSize: 20, fontWeight: 700 },
+              desc: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11, padding: [4, 0, 0, 0] } } },
           data: [{ value: Math.round(tsb), name: '团队 TSB · ' + ts.desc }]
         }]
       });
@@ -1294,6 +1366,41 @@ Views.load = (() => {
     };
     const metric = (title, value, unit, note, cls = '', help = '', references = '') => `<div class="load-metric ${cls}"><div class="k">${title}${help ? qTip(help, references) : ''}</div><div class="v">${value}<small>${unit}</small></div><div class="d">${note}</div></div>`;
 
+    // Widget section builders: each returns a wrapped <section> with data-wid + data-size
+    const kpiSec = (wid, size, m) => `<section class="card ld-widget ld-kpi ${m.cls || ''}" data-wid="${wid}" data-size="${size}">${m.html}</section>`;
+    const chartSec = (wid, size, elemId, title, tipHtml, subText, ariaLabel, extraCls) => `<section class="card ld-widget ld-chart ${extraCls || ''}" data-wid="${wid}" data-size="${size}"><div class="card-title"><h3>${title}${tipHtml || ''}</h3><span class="sub">${subText}</span></div><div class="chart ${extraCls || ''}" id="${elemId}" role="img" aria-label="${ariaLabel}"></div></section>`;
+
+    // Active dashboard widget layout; fallback to default catalog if missing
+    const dash = activeDashboard();
+    const widgets = (dash && Array.isArray(dash.widgets) && dash.widgets.length)
+      ? dash.widgets
+      : Store.WIDGET_CATALOG.map((w) => ({ id: w.id, size: w.dsize }));
+    const hasWidget = (id) => widgets.some((w) => w.id === id);
+    const sizeOf = (id) => (widgets.find((w) => w.id === id) || {}).size || 'secondary';
+
+    // Per-widget HTML builders (kept inline to access local closures: metric/qTip/refs)
+    const W = {
+      m_au: (sz) => kpiSec('m_au', sz, { html: metric('AU · 内部负荷总量', U.fmt(Math.round(auTotal)), 'AU', '筛选范围累积', '', metricHelp.au, refTxt('foster01', 'impellizzeri19')) }),
+      m_acwr: (sz) => kpiSec('m_acwr', sz, { html: metric('ACWR · 急慢性比', acwrMeta.label, '', `${acwrMeta.desc} · 截止 ${U.md(actualTo)}`, acwrMeta.cls, metricHelp.acwr, refTxt('hulin14', 'gabbett16', 'impellizzeri20')) }),
+      m_tsb: (sz) => kpiSec('m_tsb', sz, { html: metric('TSB · 训练压力平衡', currentTsb == null ? '—' : U.fmt(Math.round(currentTsb)), currentTsb == null ? '' : 'AU/日', `${tsbMeta.desc} · CTL − ATL`, tsbMeta.cls, metricHelp.tsb, refTxt('banister91', 'coggan', 'skiba13')) }),
+      m_tonnage: (sz) => kpiSec('m_tonnage', sz, { html: metric('训练吨位', U.fmt(Math.round(dose.kg / 100) / 10, 1), 't', `${U.fmt(Math.round(dose.kg))} kg`, '', metricHelp.tonnage, refTxt('impellizzeri19', 'halson14')) }),
+      m_sessions: (sz) => kpiSec('m_sessions', sz, { html: metric('训练课次', U.fmt(sessions.length), '节', `${Object.keys(typeCounts).length} 种课型`, '', metricHelp.sessions, refTxt('foster01', 'halson14')) }),
+      m_time: (sz) => kpiSec('m_time', sz, { html: metric('训练时长', U.fmt(Math.round(courseMinutes / 6) / 10, 1), 'h', `${U.fmt(Math.round(courseMinutes))} min`, '', metricHelp.courseTime, refTxt('halson14')) }),
+      m_distance: (sz) => kpiSec('m_distance', sz, { html: metric('训练距离', U.fmt(dose.m / 1000, 1), 'km', `${U.fmt(Math.round(dose.m))} m`, '', metricHelp.distance, refTxt('halson14', 'impellizzeri19')) }),
+      m_work: (sz) => kpiSec('m_work', sz, { html: metric('动作做功时间', U.fmt(dose.s / 60, 1), 'min', `${U.fmt(Math.round(dose.s))} s`, '', metricHelp.work, refTxt('halson14')) }),
+      g_acwr: (sz) => chartSec('g_acwr', sz, 'loadAcwrGauge', 'ACWR 指针看板', qTip(metricHelp.acwr, refTxt('hulin14', 'gabbett16', 'impellizzeri20')), '筛选结束日', '急慢性负荷比 ACWR 指针仪表', ''),
+      g_tsb: (sz) => chartSec('g_tsb', sz, 'loadTsbGauge', 'TSB 指针看板', qTip(metricHelp.tsb, refTxt('banister91', 'coggan', 'skiba13')), '筛选结束日', '训练压力平衡 TSB 指针仪表', ''),
+      c_daily: (sz) => chartSec('c_daily', sz, 'loadDailyChart', 'AU 内部负荷看板', qTip('柱形为每日内部负荷 AU：Σ 当日每人 RPE × 训练时长（分钟）；折线为 ATL：7 日 EWMA，反映近期负荷变化。AU 是个体内部负荷指标，主要用于观察个人或同队趋势。', refTxt('foster01', 'impellizzeri19')), '每日 AU · ATL 7 日 EWMA', '每日内部负荷与 ATL 趋势', ''),
+      c_risk: (sz) => chartSec('c_risk', sz, 'loadRiskChart', 'ACWR 与 TSB 趋势', qTip(metricHelp.acwr + ' TSB = CTL(42 日 EWMA) − ATL(7 日 EWMA)，正值通常表示相对新鲜，负值表示近期负荷高于慢性基线。区间只作训练监控参考。', refTxt('hulin14', 'gabbett16', 'impellizzeri20', 'banister91', 'coggan')), 'ACWR 0.8–1.3 为文献常见参考范围', 'ACWR 与 TSB 趋势', ''),
+      c_tonnage: (sz) => chartSec('c_tonnage', sz, 'loadTonnageChart', '吨位变化', qTip(metricHelp.tonnage, refTxt('impellizzeri19', 'halson14')), 't / 日', '每日吨位', ''),
+      c_session: (sz) => chartSec('c_session', sz, 'loadSessionChart', '训练课次与类型', qTip(metricHelp.sessions, refTxt('foster01', 'halson14')), '已完成训练课', '每日训练课次', ''),
+      c_distance: (sz) => chartSec('c_distance', sz, 'loadDistanceChart', '训练距离', qTip(metricHelp.distance, refTxt('halson14', 'impellizzeri19')), 'km / 日', '每日训练距离', ''),
+      c_work: (sz) => chartSec('c_work', sz, 'loadWorkTimeChart', '动作做功时间', qTip(metricHelp.work, refTxt('halson14')), 'min / 日', '每日动作做功时间', ''),
+      d_type: (sz) => chartSec('d_type', sz, 'loadTypeChart', '训练课类型分布', qTip('按训练课的 session.type 分组，每节已完课记录计 1 节；环图比例 = 该类型课次 ÷ 所选范围全部课次。用于观察课型结构，不代表训练负荷大小。', refTxt('halson14', 'impellizzeri19')), '按课次占比', '训练课类型课次占比', 'load-donut'),
+      d_time: (sz) => chartSec('d_time', sz, 'loadTypeTimeChart', '训练类型时间占比', qTip(metricHelp.courseTime + ' 分类型占比算法：某类型的 Σ session.duration ÷ 所有类型的 Σ session.duration。', refTxt('halson14', 'impellizzeri19')), '课程时长 · min', '训练课类型时间占比', 'load-donut')
+    };
+    const widgetHtml = widgets.map((w) => (W[w.id] ? W[w.id](w.size) : '')).join('');
+
     el.innerHTML = `
       <div class="load-filterbar" id="loadFilters">
         <div class="load-date-range">
@@ -1305,28 +1412,8 @@ Views.load = (() => {
         <div class="field"><label for="loadMicroFilter">小周期</label><select class="sel" id="loadMicroFilter"><option value="all">全部小周期</option>${availableMicros.map((mi) => `<option value="${mi.id}" ${mi.id === state.fltMicroId ? 'selected' : ''}>${cycleOptionLabel(mi)}</option>`).join('')}</select></div>
         <div class="load-filter-context">${U.esc(scopeName)}<span>${U.esc(activeCycle)} · ${U.md(dateFrom)} — ${U.md(dateTo)}</span></div>
       </div>
-      <div class="load-metric-grid">
-        ${metric('AU · 内部负荷总量', U.fmt(Math.round(auTotal)), 'AU', '筛选范围累积', '', metricHelp.au, refTxt('foster01', 'impellizzeri19'))}
-        ${metric('ACWR · 急慢性比', acwrMeta.label, '', `${acwrMeta.desc} · 截止 ${U.md(actualTo)}`, acwrMeta.cls, metricHelp.acwr, refTxt('hulin14', 'gabbett16', 'impellizzeri20'))}
-        ${metric('TSB · 训练压力平衡', currentTsb == null ? '—' : U.fmt(Math.round(currentTsb)), currentTsb == null ? '' : 'AU/日', `${tsbMeta.desc} · CTL − ATL`, tsbMeta.cls, metricHelp.tsb, refTxt('banister91', 'coggan', 'skiba13'))}
-        ${metric('训练吨位', U.fmt(Math.round(dose.kg / 100) / 10, 1), 't', `${U.fmt(Math.round(dose.kg))} kg`, '', metricHelp.tonnage, refTxt('impellizzeri19', 'halson14'))}
-        ${metric('训练课次', U.fmt(sessions.length), '节', `${Object.keys(typeCounts).length} 种课型`, '', metricHelp.sessions, refTxt('foster01', 'halson14'))}
-        ${metric('训练时长', U.fmt(Math.round(courseMinutes / 6) / 10, 1), 'h', `${U.fmt(Math.round(courseMinutes))} min`, '', metricHelp.courseTime, refTxt('halson14'))}
-        ${metric('训练距离', U.fmt(dose.m / 1000, 1), 'km', `${U.fmt(Math.round(dose.m))} m`, '', metricHelp.distance, refTxt('halson14', 'impellizzeri19'))}
-        ${metric('动作做功时间', U.fmt(dose.s / 60, 1), 'min', `${U.fmt(Math.round(dose.s))} s`, '', metricHelp.work, refTxt('halson14'))}
-      </div>
-      <div class="load-chart-grid">
-        <section class="card load-chart-panel"><div class="card-title"><h3>AU 内部负荷看板${qTip('柱形为每日内部负荷 AU：Σ 当日每人 RPE × 训练时长（分钟）；折线为 ATL：7 日 EWMA，反映近期负荷变化。AU 是个体内部负荷指标，主要用于观察个人或同队趋势。', refTxt('foster01', 'impellizzeri19'))}</h3><span class="sub">每日 AU · ATL 7 日 EWMA</span></div><div class="chart" id="loadDailyChart" role="img" aria-label="每日内部负荷与 ATL 趋势"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>ACWR 与 TSB 趋势${qTip(metricHelp.acwr + ' TSB = CTL(42 日 EWMA) − ATL(7 日 EWMA)，正值通常表示相对新鲜，负值表示近期负荷高于慢性基线。区间只作训练监控参考。', refTxt('hulin14', 'gabbett16', 'impellizzeri20', 'banister91', 'coggan'))}</h3><span class="sub">ACWR 0.8–1.3 为文献常见参考范围</span></div><div class="chart" id="loadRiskChart" role="img" aria-label="ACWR 与 TSB 趋势"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>ACWR 指针看板${qTip(metricHelp.acwr, refTxt('hulin14', 'gabbett16', 'impellizzeri20'))}</h3><span class="sub">筛选结束日</span></div><div class="chart" id="loadAcwrGauge" role="img" aria-label="急慢性负荷比 ACWR 指针仪表"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>TSB 指针看板${qTip(metricHelp.tsb, refTxt('banister91', 'coggan', 'skiba13'))}</h3><span class="sub">筛选结束日</span></div><div class="chart" id="loadTsbGauge" role="img" aria-label="训练压力平衡 TSB 指针仪表"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>吨位变化${qTip(metricHelp.tonnage, refTxt('impellizzeri19', 'halson14'))}</h3><span class="sub">t / 日</span></div><div class="chart" id="loadTonnageChart" role="img" aria-label="每日吨位"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>训练课次与类型${qTip(metricHelp.sessions, refTxt('foster01', 'halson14'))}</h3><span class="sub">已完成训练课</span></div><div class="chart" id="loadSessionChart" role="img" aria-label="每日训练课次"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>训练课类型分布${qTip('按训练课的 session.type 分组，每节已完课记录计 1 节；环图比例 = 该类型课次 ÷ 所选范围全部课次。用于观察课型结构，不代表训练负荷大小。', refTxt('halson14', 'impellizzeri19'))}</h3><span class="sub">按课次占比</span></div><div class="chart load-donut" id="loadTypeChart" role="img" aria-label="训练课类型课次占比"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>训练类型时间占比${qTip(metricHelp.courseTime + ' 分类型占比算法：某类型的 Σ session.duration ÷ 所有类型的 Σ session.duration。', refTxt('halson14', 'impellizzeri19'))}</h3><span class="sub">课程时长 · min</span></div><div class="chart load-donut" id="loadTypeTimeChart" role="img" aria-label="训练课类型时间占比"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>训练距离${qTip(metricHelp.distance, refTxt('halson14', 'impellizzeri19'))}</h3><span class="sub">km / 日</span></div><div class="chart" id="loadDistanceChart" role="img" aria-label="每日训练距离"></div></section>
-        <section class="card load-chart-panel"><div class="card-title"><h3>动作做功时间${qTip(metricHelp.work, refTxt('halson14'))}</h3><span class="sub">min / 日</span></div><div class="chart" id="loadWorkTimeChart" role="img" aria-label="每日动作做功时间"></div></section>
-      </div>`;
+      <div class="ld-grid">${widgetHtml}</div>`;
+
 
     const applyDateRange = () => {
       state.dateFrom = el.querySelector('#loadDateFrom').value || today;
@@ -1367,23 +1454,29 @@ Views.load = (() => {
       if (!p) return '';
       return `${U.md(dates[p.dataIndex])}<br/>${ps.map((item) => `${item.marker}${item.seriesName}：<b>${U.fmt(item.value || 0)}</b> ${suffix(item.seriesName)}`).join('<br/>')}`;
     };
-    const dailyChart = UI.chart(el.querySelector('#loadDailyChart'));
-    dailyChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => 'AU') }), legend: { top: 0, textStyle: { color: UI.cssVar('var(--color-ink-muted)') } }, xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: 'AU' }, commonAxis), series: [
-      { name: '每日负荷', type: 'bar', data: visible.map(({ point }) => point.load), barMaxWidth: 16, itemStyle: { color: UI.tint('var(--color-info)', .68), borderRadius: [3, 3, 0, 0] } },
-      { name: 'ATL', type: 'line', data: atlVisible, smooth: true, showSymbol: false, lineStyle: { color: UI.cssVar('var(--color-warning)'), width: 2.5 } }
-    ] });
+    if (hasWidget('c_daily')) {
+      const dailyChart = UI.chart(el.querySelector('#loadDailyChart'));
+      dailyChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => 'AU') }), legend: { top: 0, textStyle: { color: UI.cssVar('var(--color-ink-muted)') } }, xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: 'AU' }, commonAxis), series: [
+        { name: '每日负荷', type: 'bar', data: visible.map(({ point }) => point.load), barMaxWidth: 16, itemStyle: { color: UI.tint('var(--color-info)', .68), borderRadius: [3, 3, 0, 0] } },
+        { name: 'ATL', type: 'line', data: atlVisible, smooth: true, showSymbol: false, lineStyle: { color: UI.cssVar('var(--color-warning)'), width: 2.5 } }
+      ] });
+    }
 
-    const riskChart = UI.chart(el.querySelector('#loadRiskChart'));
-    riskChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, (name) => name === 'TSB' ? 'AU/日' : '') }), legend: { top: 0, textStyle: { color: UI.cssVar('var(--color-ink-muted)') } }, xAxis: labelsAxis, yAxis: [
-      Object.assign({ type: 'value', name: 'ACWR', min: 0 }, commonAxis),
-      Object.assign({ type: 'value', name: 'TSB', splitLine: { show: false } }, commonAxis)
-    ], series: [
-      { name: 'ACWR', type: 'line', data: acwrVisible, smooth: true, showSymbol: false, lineStyle: { color: UI.cssVar('var(--color-accent)'), width: 2.5 }, markArea: { silent: true, itemStyle: { color: UI.tint('var(--color-success)', .09) }, data: [[{ yAxis: .8 }, { yAxis: 1.3 }]] }, markLine: { silent: true, symbol: 'none', lineStyle: { color: UI.cssVar('var(--color-danger)'), type: 'dashed' }, data: [{ yAxis: 1.5 }] } },
-      { name: 'TSB', type: 'line', yAxisIndex: 1, data: tsbVisible, smooth: true, showSymbol: false, lineStyle: { color: UI.cssVar('var(--color-info)'), width: 2 } }
-    ] });
+    if (hasWidget('c_risk')) {
+      const riskChart = UI.chart(el.querySelector('#loadRiskChart'));
+      riskChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, (name) => name === 'TSB' ? 'AU/日' : '') }), legend: { top: 0, textStyle: { color: UI.cssVar('var(--color-ink-muted)') } }, xAxis: labelsAxis, yAxis: [
+        Object.assign({ type: 'value', name: 'ACWR', min: 0 }, commonAxis),
+        Object.assign({ type: 'value', name: 'TSB', splitLine: { show: false } }, commonAxis)
+      ], series: [
+        { name: 'ACWR', type: 'line', data: acwrVisible, smooth: true, showSymbol: false, lineStyle: { color: UI.cssVar('var(--color-accent)'), width: 2.5 }, markArea: { silent: true, itemStyle: { color: UI.tint('var(--color-success)', .09) }, data: [[{ yAxis: .8 }, { yAxis: 1.3 }]] }, markLine: { silent: true, symbol: 'none', lineStyle: { color: UI.cssVar('var(--color-danger)'), type: 'dashed' }, data: [{ yAxis: 1.5 }] } },
+        { name: 'TSB', type: 'line', yAxisIndex: 1, data: tsbVisible, smooth: true, showSymbol: false, lineStyle: { color: UI.cssVar('var(--color-info)'), width: 2 } }
+      ] });
+    }
 
     const renderPointerGauge = (id, value, range, bands, info, digits, unit) => {
-      const chart = UI.chart(el.querySelector('#' + id));
+      const node = el.querySelector('#' + id);
+      if (!node) return;
+      const chart = UI.chart(node);
       const gaugeValue = value == null ? range.min : Math.max(range.min, Math.min(range.max, value));
       const valueLabel = value == null ? '—' : digits === 2 ? value.toFixed(2) : String(Math.round(value));
       chart.setOption({
@@ -1412,9 +1505,9 @@ Views.load = (() => {
       });
     };
     const acwrGaugeRange = acwrRange(currentAcwr);
-    const tsbGaugeRange = tsbRange(currentTsb || 0);
-    renderPointerGauge('loadAcwrGauge', currentAcwr, acwrGaugeRange, ACWR_BANDS(acwrGaugeRange.max), acwrMeta, 2, '');
-    renderPointerGauge('loadTsbGauge', currentTsb, tsbGaugeRange, TSB_BANDS(tsbGaugeRange.max), tsbMeta, 0, 'AU/日');
+    const tsbGaugeRange = tsbRange();
+    if (hasWidget('g_acwr')) renderPointerGauge('loadAcwrGauge', currentAcwr, acwrGaugeRange, ACWR_BANDS(acwrGaugeRange.max), acwrMeta, 2, '');
+    if (hasWidget('g_tsb')) renderPointerGauge('loadTsbGauge', currentTsb, tsbGaugeRange, TSB_BANDS(tsbGaugeRange.max), tsbMeta, 0, 'AU/日');
 
     const byDate = new Map(doseSeries.map((d) => [d.date, d]));
     const chartValues = (key, divisor) => dates.map((date) => {
@@ -1422,17 +1515,23 @@ Views.load = (() => {
       return Number.isFinite(value) ? value / divisor : 0;
     });
     const drawDailyBar = (id, data, unit, color, axisName = unit) => {
-      const chart = UI.chart(el.querySelector('#' + id));
+      const node = el.querySelector('#' + id);
+      if (!node) return;
+      const chart = UI.chart(node);
       chart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => unit) }), xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: axisName }, commonAxis), series: [{ type: 'bar', name: axisName, data, barMaxWidth: 18, itemStyle: { color, borderRadius: [3, 3, 0, 0] } }] });
     };
-    drawDailyBar('loadTonnageChart', chartValues('kg', 1000), 't', UI.cssVar('var(--color-success)'), 't');
-    drawDailyBar('loadDistanceChart', chartValues('m', 1000), 'km', UI.cssVar('var(--color-info)'), 'km');
-    drawDailyBar('loadWorkTimeChart', chartValues('s', 60), 'min', '#4fd6e0', 'min');
-    const sessionChart = UI.chart(el.querySelector('#loadSessionChart'));
-    sessionChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => '节') }), xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: '节', minInterval: 1 }, commonAxis), series: [{ type: 'bar', name: '训练课次', data: dates.map((date) => sessionCounts[date] || 0), barMaxWidth: 18, itemStyle: { color: UI.cssVar('var(--color-warning)'), borderRadius: [3, 3, 0, 0] } }] });
+    if (hasWidget('c_tonnage')) drawDailyBar('loadTonnageChart', chartValues('kg', 1000), 't', UI.cssVar('var(--color-success)'), 't');
+    if (hasWidget('c_distance')) drawDailyBar('loadDistanceChart', chartValues('m', 1000), 'km', UI.cssVar('var(--color-info)'), 'km');
+    if (hasWidget('c_work')) drawDailyBar('loadWorkTimeChart', chartValues('s', 60), 'min', '#4fd6e0', 'min');
+    if (hasWidget('c_session')) {
+      const sessionChart = UI.chart(el.querySelector('#loadSessionChart'));
+      sessionChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => '节') }), xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: '节', minInterval: 1 }, commonAxis), series: [{ type: 'bar', name: '训练课次', data: dates.map((date) => sessionCounts[date] || 0), barMaxWidth: 18, itemStyle: { color: UI.cssVar('var(--color-warning)'), borderRadius: [3, 3, 0, 0] } }] });
+    }
 
     const drawShare = (id, data, total, unit) => {
-      const chart = UI.chart(el.querySelector('#' + id));
+      const node = el.querySelector('#' + id);
+      if (!node) return;
+      const chart = UI.chart(node);
       chart.setOption({
         title: { text: U.fmt(total), subtext: unit, left: 'center', top: '40%', textStyle: { color: UI.cssVar('var(--color-ink)'), fontSize: 23, fontWeight: 700 }, subtextStyle: { color: UI.cssVar('var(--color-ink-muted)'), fontSize: 11 } },
         tooltip: Object.assign({ trigger: 'item', formatter: (p) => `${p.marker}${p.name}：<b>${U.fmt(p.value)}</b> ${unit}（${p.percent}%）` }, UI.tooltipCommon),
@@ -1441,13 +1540,16 @@ Views.load = (() => {
         series: [{ type: 'pie', radius: ['43%', '68%'], center: ['50%', '46%'], avoidLabelOverlap: true, itemStyle: { borderRadius: 5, borderColor: UI.cssVar('var(--color-surface)'), borderWidth: 2 }, label: { color: UI.cssVar('var(--color-ink)'), formatter: '{b}\n{d}%' }, data: data.map((item, i) => ({ ...item, itemStyle: { color: pieColor(item.name, i), borderRadius: 5, borderColor: UI.cssVar('var(--color-surface)'), borderWidth: 2 } })) }]
       });
     };
-    drawShare('loadTypeChart', countByType, sessions.length, '节');
-    drawShare('loadTypeTimeChart', timeByType, Math.round(courseMinutes), 'min');
+    if (hasWidget('d_type')) drawShare('loadTypeChart', countByType, sessions.length, '节');
+    if (hasWidget('d_time')) drawShare('loadTypeTimeChart', timeByType, Math.round(courseMinutes), 'min');
 
-    const metricBox = el.querySelector('.load-metric-grid');
-    metricBox.dataset.rangeStart = safeFrom;
-    metricBox.dataset.rangeEnd = actualTo;
+    const metricBox = el.querySelector('.ld-grid');
+    if (metricBox) {
+      metricBox.dataset.rangeStart = safeFrom;
+      metricBox.dataset.rangeEnd = actualTo;
+    }
   }
+
 
   function mount(v) {
     if (v == null) v = $('#view');
@@ -1474,6 +1576,13 @@ Views.load = (() => {
     };
   }
 
+  // Open dashboard editor (delegates to settings view to share the modal with the settings page)
+  function openDashboardEditor(id, v) {
+    if (Views.settings && typeof Views.settings.editDashboard === 'function') {
+      Views.settings.editDashboard(id, () => { state.dashboardId = id; mount(v); });
+    }
+  }
+
   // 实时分析：任意数据变更（手动录入/课后更新/保存）触发 Store.save → rev++ → 通知 → 负荷看板自动重算重绘
   Store.subscribe(() => {
     if (location.hash.replace('#/', '') !== 'load') return;
@@ -1483,3 +1592,4 @@ Views.load = (() => {
 
   return { mount };
 })();
+

@@ -123,6 +123,8 @@ Views.settings = (() => {
   const TABS = [
     { id: 'appearance', name: '外观' },
     { id: 'data', name: '数据与备份' },
+    { id: 'load', name: '负荷看板' },
+    { id: 'kpi', name: 'KPI 看板' },
     { id: 'general', name: '通用' },
     { id: 'manual', name: '使用手册' },
     { id: 'about', name: '关于' }
@@ -140,6 +142,8 @@ Views.settings = (() => {
     const body = $('#stBody', box);
     if (state.tab === 'appearance') renderAppearance(body);
     else if (state.tab === 'data') renderData(body);
+    else if (state.tab === 'load') renderLoadDashboards(body);
+    else if (state.tab === 'kpi') renderDashboards(body, 'kpi');
     else if (state.tab === 'general') renderGeneral(body);
     else if (state.tab === 'manual') renderManual(body);
     else renderAbout(body);
@@ -383,6 +387,229 @@ Views.settings = (() => {
           close();
           UI.toast('已清空全部数据，正在重启…', 'ok');
           setTimeout(() => location.reload(), 600);
+        };
+      }
+    });
+  }
+
+  // ---------- 自定义看板管理（负荷 / KPI 共用一套逻辑） ----------
+  // Each dashboard: { id, name, scope: 'personal'|'team', isDefault, widgets: [{id, size}] }
+  // kind: 'load' | 'kpi' — selects store key, widget catalog, copy text and default widgets
+  const DASH_KINDS = {
+    load: {
+      cfgKey: 'loadDashboards', catalog: () => Store.WIDGET_CATALOG, groups: () => Store.WIDGET_GROUPS,
+      title: '负荷看板', desc: '为负荷管理页面定制需要展示的指标与图表。可以建立多套看板，按场景切换。',
+      newWidgets: [{ id: 'c_daily', size: 'primary' }, { id: 'c_risk', size: 'primary' }],
+      sizeHint: '主组件占两列宽、突出关键指标（如 ACWR / TSB 趋势）；次组件占一列。',
+      switchHint: '在「05 负荷管理」页面顶部 chip 行点击看板名即可切换，可随时回来编辑。'
+    },
+    kpi: {
+      cfgKey: 'kpiDashboards', catalog: () => Store.KPI_WIDGET_CATALOG, groups: () => Store.KPI_WIDGET_GROUPS,
+      title: 'KPI 看板', desc: '为 KPI 分析页面定制需要展示的指标与图表。可以建立多套看板，按场景切换。',
+      newWidgets: [{ id: 'c_pct', size: 'primary' }, { id: 'c_rm', size: 'primary' }],
+      sizeHint: '主组件占两列宽、突出关键图表（如团队百分位 / 1RM 力量变化）；次组件占一列，指标块占四分之一列。',
+      switchHint: '在「08 KPI 分析」页面顶部 chip 行点击看板名即可切换，可随时回来编辑。'
+    }
+  };
+
+  function renderLoadDashboards(body) { renderDashboards(body, 'load'); }
+
+  function renderDashboards(body, kind) {
+    const K = DASH_KINDS[kind];
+    const cfg = Store.data.settings[K.cfgKey];
+    const items = (cfg && Array.isArray(cfg.items)) ? cfg.items : [];
+    const groups = K.groups();
+    const catalog = K.catalog();
+    const rows = items.map((d) => {
+      const scopeTxt = d.scope === 'team' ? '团队' : '个人';
+      const scopeCls = d.scope === 'team' ? 'is-team' : 'is-personal';
+      const active = cfg.activeId === d.id;
+      return `<div class="st-dash-row ${active ? 'on' : ''}" data-id="${d.id}">
+        <div class="st-dash-name">
+          ${d.isDefault ? '<span class="st-dash-star">★</span>' : ''}
+          <b>${U.esc(d.name)}</b>
+          ${active ? '<span class="st-dash-act">当前</span>' : ''}
+        </div>
+        <span class="st-dash-scope ${scopeCls}">${scopeTxt}</span>
+        <span class="st-dash-count">${(d.widgets || []).length} 项</span>
+        <div class="st-dash-actions">
+          <button type="button" class="btn sm ghost" data-act="set" data-id="${d.id}" ${active ? 'disabled' : ''}>设为默认</button>
+          <button type="button" class="btn sm" data-act="edit" data-id="${d.id}">编辑</button>
+          ${d.isDefault ? '' : `<button type="button" class="btn sm danger" data-act="del" data-id="${d.id}">删除</button>`}
+        </div>
+      </div>`;
+    }).join('') || `<div class="hint" style="padding:12px 0">暂无看板，点击下方新建。</div>`;
+
+    body.innerHTML =
+      card(K.title, K.desc, `
+        <div class="st-dash-list">${rows}</div>
+        <button type="button" class="btn st-dash-add" id="stDashNew">+ 新建看板</button>`)
+      + card('组件目录', '可加入看板的全部指标，按类别分组。', `
+        <div class="st-cat-grid">
+          ${groups.map((g) => {
+            const items = catalog.filter((w) => w.group === g.id);
+            return `<div class="st-cat-cell">
+              <div class="st-cat-h">${U.esc(g.name)}<span>${items.length}</span></div>
+              <ul class="st-cat-list">
+                ${items.map((w) => `<li><b>${U.esc(w.name)}</b><i>${w.dsize === 'primary' ? '主' : '次'}</i></li>`).join('')}
+              </ul>
+            </div>`;
+          }).join('')}
+        </div>`)
+      + card('使用方法', '', `
+        <ul class="st-man-b" style="margin:0;padding-left:18px;line-height:1.9">
+          <li>新建看板：点击「+ 新建看板」，在弹窗里命名、选个人/团队范围，再勾选要展示的组件。</li>
+          <li>主/次布局：每个组件可选「主」或「次」。${K.sizeHint}</li>
+          <li>切换：${K.switchHint}</li>
+          <li>默认看板（★）不可删除，但可编辑其组件与主次设置。</li>
+        </ul>`);
+
+    $$('.st-dash-row [data-act]', body).forEach((b) => b.onclick = () => {
+      const id = b.dataset.id, act = b.dataset.act;
+      const item = items.find((x) => x.id === id);
+      if (!item) return;
+      if (act === 'set') { cfg.activeId = id; Store.save(); UI.toast('已设为默认看板', 'ok'); renderDashboards(body, kind); }
+      else if (act === 'edit') { editDashboard(id, () => renderDashboards(body, kind), kind); }
+      else if (act === 'del') {
+        UI.confirm(`确定删除看板「${item.name}」？`, () => {
+          const idx = cfg.items.findIndex((x) => x.id === id);
+          if (idx < 0) return;
+          cfg.items.splice(idx, 1);
+          if (cfg.activeId === id) cfg.activeId = 'default';
+          Store.save();
+          UI.toast('看板已删除', 'ok');
+          renderDashboards(body, kind);
+        });
+      }
+    });
+    $('#stDashNew', body).onclick = () => {
+      const id = U.uid('d');
+      cfg.items.push({ id, name: '新看板 ' + (cfg.items.length + 1), scope: 'personal', isDefault: false, widgets: K.newWidgets.map((w) => ({ id: w.id, size: w.size })) });
+      cfg.activeId = id;
+      Store.save();
+      editDashboard(id, () => renderDashboards(body, kind), kind);
+    };
+  }
+
+  // ---------- 编辑看板模态（负荷页 / KPI 页共享入口） ----------
+  function editDashboard(id, onSaved, kind) {
+    const K = DASH_KINDS[kind || 'load'];
+    const catalog = K.catalog();
+    const cfg = Store.data.settings[K.cfgKey];
+    const item = cfg && cfg.items.find((x) => x.id === id);
+    if (!item) { UI.toast('看板不存在', 'err'); return; }
+    // Local edit copy: widgets array of { id, size } ; committed on save
+    const local = { name: item.name, scope: item.scope, widgets: (item.widgets || []).map((w) => ({ id: w.id, size: w.size })) };
+    const widgetById = (wid) => local.widgets.find((w) => w.id === wid);
+    const renderRows = () => K.groups().map((g) => {
+      const items = catalog.filter((w) => w.group === g.id);
+      return `<div class="ed-group">
+        <div class="ed-group-h">${U.esc(g.name)}<span>${items.length}</span></div>
+        <div class="ed-grid">
+          ${items.map((w) => {
+            const sel = widgetById(w.id);
+            const on = !!sel;
+            const size = sel ? sel.size : w.dsize;
+            return `<label class="ed-cell ${on ? 'on' : ''}" data-wid="${w.id}">
+              <input type="checkbox" ${on ? 'checked' : ''}>
+              <div class="ed-cell-body">
+                <b>${U.esc(w.name)}</b>
+                <div class="ed-size">
+                  <button type="button" class="ed-size-btn ${size === 'primary' ? 'on' : ''}" data-size="primary" ${on ? '' : 'disabled'}>主</button>
+                  <button type="button" class="ed-size-btn ${size === 'secondary' ? 'on' : ''}" data-size="secondary" ${on ? '' : 'disabled'}>次</button>
+                </div>
+              </div>
+            </label>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+    const renderSel = () => {
+      if (!local.widgets.length) return `<div class="hint" style="padding:8px 0">还未选择组件，从下方组件目录勾选。</div>`;
+      return local.widgets.map((w, i) => {
+        const meta = catalog.find((m) => m.id === w.id);
+        const name = meta ? meta.name : w.id;
+        return `<span class="ed-pill ${w.size === 'primary' ? 'is-primary' : ''}"><i>${i + 1}</i>${U.esc(name)}<button type="button" class="ed-pill-x" data-rm="${U.esc(w.id)}" aria-label="移除">×</button></span>`;
+      }).join('');
+    };
+
+    UI.modal({
+      title: '编辑看板',
+      body: `<div class="ed-modal">
+        <div class="ed-row">
+          <label class="field"><span>看板名称</span><input class="ipt" id="edName" value="${U.esc(local.name)}" maxlength="20"></label>
+          <div class="field"><span>适用范围</span>
+            <div class="ed-scope">
+              <button type="button" class="ed-scope-btn ${local.scope === 'personal' ? 'on' : ''}" data-scope="personal">个人</button>
+              <button type="button" class="ed-scope-btn ${local.scope === 'team' ? 'on' : ''}" data-scope="team">团队</button>
+            </div>
+          </div>
+        </div>
+        <div class="ed-selected"><div class="ed-selected-h">已选组件（添加顺序）</div><div class="ed-selected-list" id="edSel">${renderSel()}</div></div>
+        <div class="ed-catalog" id="edCatalog">${renderRows()}</div>
+      </div>`,
+      footer: `<button class="btn ghost" data-x>取消</button><button class="btn primary" data-ok>保存</button>`,
+      onMount(ov, close) {
+        const name = ov.querySelector('#edName');
+        name.oninput = () => { local.name = name.value.trim() || '未命名看板'; };
+        // Scope toggle
+        ov.querySelectorAll('[data-scope]').forEach((b) => b.onclick = () => {
+          local.scope = b.dataset.scope;
+          ov.querySelectorAll('[data-scope]').forEach((x) => x.classList.toggle('on', x.dataset.scope === local.scope));
+        });
+        // Catalog: checkbox + size buttons (delegated)
+        const cat = ov.querySelector('#edCatalog');
+        cat.addEventListener('change', (e) => {
+          const cell = e.target.closest('.ed-cell');
+          if (!cell || e.target.type !== 'checkbox') return;
+          const wid = cell.dataset.wid;
+          const meta = catalog.find((m) => m.id === wid);
+          if (e.target.checked) {
+            if (!widgetById(wid)) local.widgets.push({ id: wid, size: meta ? meta.dsize : 'secondary' });
+          } else {
+            const idx = local.widgets.findIndex((w) => w.id === wid);
+            if (idx >= 0) local.widgets.splice(idx, 1);
+          }
+          // Re-render catalog + selected list (preserve focus on the same cell if possible)
+          const focusedWid = wid;
+          cat.innerHTML = renderRows();
+          ov.querySelector('#edSel').innerHTML = renderSel();
+          const newCell = cat.querySelector(`[data-wid="${focusedWid}"] input`);
+          if (newCell) { try { newCell.focus(); } catch (e) {} }
+        });
+        cat.addEventListener('click', (e) => {
+          const btn = e.target.closest('.ed-size-btn');
+          if (!btn) return;
+          const cell = btn.closest('.ed-cell');
+          const wid = cell.dataset.wid;
+          const sel = widgetById(wid);
+          if (!sel) return;
+          sel.size = btn.dataset.size;
+          cat.innerHTML = renderRows();
+          ov.querySelector('#edSel').innerHTML = renderSel();
+        });
+        // Remove from selected list
+        const sel = ov.querySelector('#edSel');
+        sel.addEventListener('click', (e) => {
+          const x = e.target.closest('[data-rm]');
+          if (!x) return;
+          const wid = x.dataset.rm;
+          const idx = local.widgets.findIndex((w) => w.id === wid);
+          if (idx >= 0) local.widgets.splice(idx, 1);
+          cat.innerHTML = renderRows();
+          sel.innerHTML = renderSel();
+        });
+        // Save
+        ov.querySelector('[data-ok]').onclick = () => {
+          const nameVal = name.value.trim() || '未命名看板';
+          if (!local.widgets.length) { UI.toast('请至少选择 1 个组件', 'err'); return; }
+          item.name = nameVal;
+          item.scope = local.scope;
+          item.widgets = local.widgets.map((w) => ({ id: w.id, size: w.size }));
+          Store.save();
+          close();
+          UI.toast('看板已保存', 'ok');
+          if (typeof onSaved === 'function') onSaved();
         };
       }
     });
@@ -633,5 +860,5 @@ Views.settings = (() => {
     })();
   }
 
-  return { mount, applyAppearance, contactDev };
+  return { mount, applyAppearance, contactDev, editDashboard, editKpiDashboard: (id, onSaved) => editDashboard(id, onSaved, 'kpi') };
 })();

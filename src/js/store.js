@@ -9,7 +9,7 @@ const Store = {
   defaultDB() {
     return {
       version: 1,
-      settings: { activeMacroId: null },
+      settings: { activeMacroId: null, loadDashboards: null, kpiDashboards: null },
       customSports: {},            // { [catName]: [sportName] }
       categories1: [],             // 动作库一级分类 {id, name, children:[{id,name}]}
       exercises: [],               // {id, cat1, cat2, name, equip, notes}（1RM 一律按运动员测定，不设默认值）
@@ -86,6 +86,158 @@ const Store = {
   moduleOfType(t) {
     for (const m of Store.TRAIN_MODULES) if (m.types.includes(t)) return m.name;
     return null;
+  },
+
+  // Load dashboard widget catalog: id → { id, name, group, dsize }
+  // group: 'kpi' | 'gauge' | 'chart' | 'donut' ; dsize: 'primary' | 'secondary'
+  WIDGET_CATALOG: [
+    // KPI cards (8)
+    { id: 'm_au',       name: '内部负荷总量',   group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_acwr',     name: 'ACWR 急慢性比',  group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_tsb',      name: 'TSB 压力平衡',   group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_tonnage',  name: '训练吨位',       group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_sessions', name: '训练课次',       group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_time',     name: '训练时长',       group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_distance', name: '训练距离',      group: 'kpi',   dsize: 'secondary' },
+    { id: 'm_work',     name: '动作做功时间',   group: 'kpi',   dsize: 'secondary' },
+    // Pointer gauges (2)
+    { id: 'g_acwr',     name: 'ACWR 指针',      group: 'gauge', dsize: 'secondary' },
+    { id: 'g_tsb',      name: 'TSB 指针',       group: 'gauge', dsize: 'secondary' },
+    // Trend charts (6)
+    { id: 'c_daily',    name: '每日负荷 + ATL', group: 'chart', dsize: 'primary' },
+    { id: 'c_risk',     name: 'ACWR / TSB 趋势', group: 'chart', dsize: 'primary' },
+    { id: 'c_tonnage',  name: '吨位变化',       group: 'chart', dsize: 'secondary' },
+    { id: 'c_session',  name: '训练课次',       group: 'chart', dsize: 'secondary' },
+    { id: 'c_distance', name: '训练距离',       group: 'chart', dsize: 'secondary' },
+    { id: 'c_work',     name: '做功时间',       group: 'chart', dsize: 'secondary' },
+    // Donut shares (2)
+    { id: 'd_type',     name: '课次类型占比',   group: 'donut',  dsize: 'secondary' },
+    { id: 'd_time',     name: '训练时间占比',   group: 'donut',  dsize: 'secondary' }
+  ],
+  WIDGET_GROUPS: [
+    { id: 'kpi',   name: 'KPI 指标' },
+    { id: 'gauge', name: '指针仪表' },
+    { id: 'chart', name: '趋势图' },
+    { id: 'donut', name: '占比环图' }
+  ],
+
+  // Default load dashboard layout: 2 primary (ACWR/TSB trend + daily AU/ATL) + all secondary
+  defaultLoadDashboards() {
+    return {
+      activeId: 'default',
+      items: [
+        {
+          id: 'default',
+          name: '默认看板',
+          scope: 'personal',         // 'personal' | 'team'
+          isDefault: true,           // locked: cannot delete, can edit
+          widgets: [
+            { id: 'c_daily',    size: 'primary' },
+            { id: 'c_risk',     size: 'primary' },
+            { id: 'm_au',       size: 'secondary' },
+            { id: 'm_acwr',     size: 'secondary' },
+            { id: 'm_tsb',      size: 'secondary' },
+            { id: 'm_tonnage',  size: 'secondary' },
+            { id: 'm_sessions', size: 'secondary' },
+            { id: 'm_time',     size: 'secondary' },
+            { id: 'm_distance', size: 'secondary' },
+            { id: 'm_work',     size: 'secondary' },
+            { id: 'g_acwr',     size: 'secondary' },
+            { id: 'g_tsb',      size: 'secondary' },
+            { id: 'c_tonnage',  size: 'secondary' },
+            { id: 'c_session',  size: 'secondary' },
+            { id: 'c_distance', size: 'secondary' },
+            { id: 'c_work',     size: 'secondary' },
+            { id: 'd_type',     size: 'secondary' },
+            { id: 'd_time',     size: 'secondary' }
+          ]
+        }
+      ]
+    };
+  },
+
+  // Migration: backfill missing loadDashboards setting (single-shot, idempotent)
+  migrateLoadDashboards() {
+    const cfg = Store.data.settings.loadDashboards;
+    if (cfg && Array.isArray(cfg.items) && cfg.items.length) return;
+    Store.data.settings.loadDashboards = Store.defaultLoadDashboards();
+  },
+
+  // Active load dashboard object (resolves to first item if activeId stale)
+  getActiveLoadDashboard() {
+    const cfg = Store.data.settings.loadDashboards;
+    if (!cfg || !Array.isArray(cfg.items) || !cfg.items.length) return null;
+    return cfg.items.find((it) => it.id === cfg.activeId) || cfg.items[0];
+  },
+
+  // KPI dashboard widget catalog: id → { id, name, group, dsize }
+  // group: 'kpi' | 'compare' | 'trend' | 'profile'
+  KPI_WIDGET_CATALOG: [
+    // Metric tiles (4)
+    { id: 'm_pct',   name: '平均百分位',     group: 'kpi',     dsize: 'secondary' },
+    { id: 'm_lead',  name: '团队领先项数',   group: 'kpi',     dsize: 'secondary' },
+    { id: 'm_gain',  name: '显著进步项数',   group: 'kpi',     dsize: 'secondary' },
+    { id: 'm_fms',   name: 'FMS 总分',       group: 'kpi',     dsize: 'secondary' },
+    // Compare charts (4)
+    { id: 'c_pct',   name: '团队百分位横条', group: 'compare', dsize: 'primary' },
+    { id: 'c_delta', name: '基线→当前变化',  group: 'compare', dsize: 'secondary' },
+    { id: 'c_zbar',  name: 'Z 分数偏差图',   group: 'compare', dsize: 'secondary' },
+    { id: 'c_rank',  name: '团队综合评分排名', group: 'compare', dsize: 'secondary' },
+    // Trend charts (2)
+    { id: 'c_rm',    name: '1RM 力量变化',   group: 'trend',   dsize: 'primary' },
+    { id: 'c_trend', name: '纵向追踪趋势',   group: 'trend',   dsize: 'secondary' },
+    // Profile charts (2)
+    { id: 'c_radar', name: '综合能力雷达图', group: 'profile', dsize: 'secondary' },
+    { id: 'c_fms',   name: 'FMS 动作筛查',   group: 'profile', dsize: 'secondary' }
+  ],
+  KPI_WIDGET_GROUPS: [
+    { id: 'kpi',     name: '指标速览' },
+    { id: 'compare', name: '对比分析' },
+    { id: 'trend',   name: '趋势追踪' },
+    { id: 'profile', name: '能力画像' }
+  ],
+
+  // Default KPI dashboard layout: 2 primary (percentile + 1RM trend) + all secondary
+  defaultKpiDashboards() {
+    return {
+      activeId: 'default',
+      items: [
+        {
+          id: 'default',
+          name: '默认看板',
+          scope: 'personal',
+          isDefault: true,
+          widgets: [
+            { id: 'c_pct',   size: 'primary' },
+            { id: 'c_rm',    size: 'primary' },
+            { id: 'm_pct',   size: 'secondary' },
+            { id: 'm_lead',  size: 'secondary' },
+            { id: 'm_gain',  size: 'secondary' },
+            { id: 'm_fms',   size: 'secondary' },
+            { id: 'c_delta', size: 'secondary' },
+            { id: 'c_radar', size: 'secondary' },
+            { id: 'c_zbar',  size: 'secondary' },
+            { id: 'c_fms',   size: 'secondary' },
+            { id: 'c_trend', size: 'secondary' },
+            { id: 'c_rank',  size: 'secondary' }
+          ]
+        }
+      ]
+    };
+  },
+
+  // Migration: backfill missing kpiDashboards setting (single-shot, idempotent)
+  migrateKpiDashboards() {
+    const cfg = Store.data.settings.kpiDashboards;
+    if (cfg && Array.isArray(cfg.items) && cfg.items.length) return;
+    Store.data.settings.kpiDashboards = Store.defaultKpiDashboards();
+  },
+
+  // Active KPI dashboard object (resolves to first item if activeId stale)
+  getActiveKpiDashboard() {
+    const cfg = Store.data.settings.kpiDashboards;
+    if (!cfg || !Array.isArray(cfg.items) || !cfg.items.length) return null;
+    return cfg.items.find((it) => it.id === cfg.activeId) || cfg.items[0];
   },
 
   goalById(id) { return (Store.data.goals || []).find((g) => g.id === id); },
@@ -442,6 +594,10 @@ const Store = {
         }
       }
     }
+    // Load dashboard customization migration: backfill default layout if missing
+    Store.migrateLoadDashboards();
+    // KPI dashboard customization migration: backfill default layout if missing
+    Store.migrateKpiDashboards();
     await Store.persist();
     // 自动备份（设置页开关）：启动时每天一份落到 userData/backups，主进程负责去重与保留份数
     if (window.api && window.api.backupDB && Store.data.settings.autoBackup) {

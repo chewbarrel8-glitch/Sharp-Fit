@@ -856,7 +856,7 @@ Views.kpiLab = (() => {
       if (!Array.isArray(o.data)) return o;
       o.data = o.data.map((d) => {
         const v = d && typeof d === 'object' ? d.value : d;
-        return Object.assign({}, d, { label: { show: true, position: posOf(v), color: '#c8d0de', fontSize: 10, formatter: (p) => fmtV(p.value) } });
+        return Object.assign({}, d, { label: { show: true, position: posOf(v), color: UI.cssVar('var(--color-ink)'), fontSize: 10, formatter: (p) => fmtV(p.value) } });
       });
       return o;
     };
