@@ -13,13 +13,14 @@ Views.settings = (() => {
   const BGMODES = [
     { id: 'solid', name: '纯色', desc: '深邃纯色，专注工作' },
     { id: 'gradient', name: '渐变', desc: '低调双色光晕' },
-    { id: 'starfield', name: '星空', desc: '自然星点缓动' }
+    { id: 'starfield', name: '星空', desc: '自然星点缓动' },
+    { id: 'glass', name: '毛玻璃', desc: '深色底 + 彩色光斑 + 毛玻璃模糊' }
   ];
 
   function appearance() {
     const s = Store.data.settings;
-    if (!s.appearance) s.appearance = { bgm: 'solid', accent: 'volt', density: 'cozy', theme: 'dark', dim: 0.55 };
-    ['bgm', 'accent', 'density', 'theme', 'dim'].forEach((k) => { if (!(k in s.appearance)) s.appearance[k] = { bgm: 'solid', accent: 'volt', density: 'cozy', theme: 'dark', dim: 0.55 }[k]; });
+    if (!s.appearance) s.appearance = { bgm: 'solid', accent: 'volt', density: 'cozy', theme: 'dark', dim: 0.55, zoom: 1.0 };
+    ['bgm', 'accent', 'density', 'theme', 'dim', 'zoom'].forEach((k) => { if (!(k in s.appearance)) s.appearance[k] = { bgm: 'solid', accent: 'volt', density: 'cozy', theme: 'dark', dim: 0.55, zoom: 1.0 }[k]; });
     if (s.appearance.bgm === 'image') s.appearance.bgm = 'solid';   // 自定义背景图功能已移除，旧配置回退纯色
     return s.appearance;
   }
@@ -123,6 +124,7 @@ Views.settings = (() => {
   const TABS = [
     { id: 'appearance', name: '外观' },
     { id: 'data', name: '数据与备份' },
+    { id: 'exercises', name: '动作库' },
     { id: 'load', name: '负荷看板' },
     { id: 'kpi', name: 'KPI 看板' },
     { id: 'general', name: '通用' },
@@ -142,6 +144,7 @@ Views.settings = (() => {
     const body = $('#stBody', box);
     if (state.tab === 'appearance') renderAppearance(body);
     else if (state.tab === 'data') renderData(body);
+    else if (state.tab === 'exercises') renderExercises(body);
     else if (state.tab === 'load') renderLoadDashboards(body);
     else if (state.tab === 'kpi') renderDashboards(body, 'kpi');
     else if (state.tab === 'general') renderGeneral(body);
@@ -184,6 +187,18 @@ Views.settings = (() => {
       + card('界面密度', '', `
         <div class="st-seg">
           ${['cozy', 'compact'].map((d) => `<button type="button" class="st-seg-btn ${a.density === d ? 'on' : ''}" data-density="${d}">${d === 'cozy' ? '舒适' : '紧凑'}</button>`).join('')}
+        </div>`)
+      + card('窗口大小', '', `
+        <div class="win-size-grid">
+          ${[
+            { id: 'compact', name: '紧凑', desc: '1200×800', w: 1200, h: 800 },
+            { id: 'standard', name: '标准', desc: '1440×920', w: 1440, h: 920 },
+            { id: 'comfort', name: '舒适', desc: '1600×1000', w: 1600, h: 1000 },
+            { id: 'wide', name: '宽屏', desc: '1920×1080', w: 1920, h: 1080 }
+          ].map((m) => `
+            <button type="button" class="win-size-opt ${((a.winW || 1440) === m.w && (a.winH || 920) === m.h) ? 'on' : ''}" data-win="${m.w},${m.h}">
+              <b>${m.name}</b><i>${m.desc}</i>
+            </button>`).join('')}
         </div>`);
 
     $$('[data-theme]', body).forEach((b) => b.onclick = () => { a.theme = b.dataset.theme; saveAppearance(); applyAppearance(); renderAppearance(body); });
@@ -192,6 +207,13 @@ Views.settings = (() => {
     $$('[data-density]', body).forEach((b) => b.onclick = () => { a.density = b.dataset.density; saveAppearance(); applyAppearance(); renderAppearance(body); });
     $('#stDim', body).oninput = (e) => { a.dim = Number(e.target.value); $('#stDimV', body).textContent = Math.round(a.dim * 100) + '%'; applyAppearance(); };
     $('#stDim', body).onchange = () => saveAppearance();
+    $$('[data-win]', body).forEach((b) => b.onclick = () => {
+      const [w, h] = b.dataset.win.split(',').map(Number);
+      a.winW = w; a.winH = h;
+      saveAppearance();
+      if (window.api && window.api.setWindowSize) window.api.setWindowSize(w, h);
+      renderAppearance(body);
+    });
   }
 
   // ---------- 数据与备份 ----------
@@ -411,6 +433,15 @@ Views.settings = (() => {
       switchHint: '在「08 KPI 分析」页面顶部 chip 行点击看板名即可切换，可随时回来编辑。'
     }
   };
+
+  // ---------- 动作库（嵌入设置 tab） ----------
+  function renderExercises(body) {
+    if (window.Views && Views.exercises && Views.exercises.mount) {
+      Views.exercises.mount(body);
+    } else {
+      body.innerHTML = `<div class="empty"><h4>动作库加载失败</h4><p>请刷新重试</p></div>`;
+    }
+  }
 
   function renderLoadDashboards(body) { renderDashboards(body, 'load'); }
 

@@ -380,8 +380,14 @@ Views.kpi = (() => {
     }
 
     // ---------- 组件字典：按看板配置过滤渲染 ----------
-    const tile = (wid, sz, label, val, unit, note) => `<section class="card ld-widget ld-kpi" data-wid="${wid}" data-size="${sz}"><div class="load-metric"><div class="k">${label}</div><div class="v">${val}<small>${unit}</small></div><div class="d">${note}</div></div></section>`;
-    const chartSec = (wid, sz, title, ctx, tip, chartId, h) => `<section class="card ld-widget ld-chart" data-wid="${wid}" data-size="${sz}"><div class="chart-cap">${title}${ctx ? `<span class="ctx">${ctx}</span>` : ''}${tip || ''}</div><div class="chart" id="${chartId}" style="height:${h}px"></div></section>`;
+    // 布局角色：tile=小指标卡片(1/4宽) / chart=大图表(全宽) / half=半宽图表(1/2宽)
+    const ROLE = {
+      m_pct:'tile', m_lead:'tile', m_gain:'tile', m_fms:'tile',
+      c_pct:'chart', c_delta:'chart', c_zbar:'chart', c_radar:'chart',
+      c_rank:'chart', c_rm:'chart', c_trend:'chart', c_fms:'chart'
+    };
+    const tile = (wid, sz, label, val, unit, note) => `<section class="card kpi-tile" data-wid="${wid}"><div class="kpi-tile-inner"><div class="kpi-tile-k">${label}</div><div class="kpi-tile-v">${val}<small>${unit}</small></div><div class="kpi-tile-d">${note}</div></div></section>`;
+    const chartSec = (wid, sz, title, ctx, tip, chartId, h) => `<section class="card kpi-chart" data-wid="${wid}"><div class="chart-cap">${title}${ctx ? `<span class="ctx">${ctx}</span>` : ''}${tip || ''}</div><div class="chart" id="${chartId}" style="height:${h}px"></div></section>`;
     const h = Math.max(220, kpiRows.length * 26 + 70);
     const deltaRows = kpiRows.filter((r) => r.deltaCur != null);
     const W = {
@@ -392,9 +398,9 @@ Views.kpi = (() => {
       c_pct: (sz) => !kpiRows.length ? '' : chartSec('c_pct', sz, '团队百分位', '100 = 团队领先', qTip('百分位=该运动员当前值在团队中的相对位置（0–100）；条端标注「当前值 · 百分位」。悬停查看团队均值 / CV / SWC / Z 明细', refTxt('hopkins09', 'hopkins00')), 'chKpiPct', h),
       c_delta: (sz) => !kpiRows.length ? '' : (deltaRows.length
         ? chartSec('c_delta', sz, '基线 → 当前变化', '↑ 增长 / ↓ 下降', qTip('Δ% =（当前值 − 基线值）÷ 基线值。绿色=提升、红色=退步；Δ% 超过 SWC（最小有意义变化）表示变化具有实际意义而非测量噪声', refTxt('hopkins09', 'hopkins00')), 'chKpiDelta', h)
-        : `<section class="card ld-widget ld-chart" data-wid="c_delta" data-size="${sz}"><div class="chart-cap">基线 → 当前变化</div><p class="hint" style="padding:36px 10px;text-align:center;border:1px dashed var(--border);border-radius:8px">各指标需 ≥2 次记录后显示变化方向</p></section>`),
+        : `<section class="card kpi-chart" data-wid="c_delta"><div class="chart-cap">基线 → 当前变化</div><p class="hint" style="padding:36px 10px;text-align:center;border:1px dashed var(--border);border-radius:8px">各指标需 ≥2 次记录后显示变化方向</p></section>`),
       c_zbar: (sz) => !zItems.length ? '' : chartSec('c_zbar', sz, 'Z 分数偏差图', '相对团队均值 · 0=团队水平', '', 'chZBar', 320),
-      c_rank: (sz) => !rankRows ? '' : `<section class="card ld-widget" data-wid="c_rank" data-size="${sz}">
+      c_rank: (sz) => !rankRows ? '' : `<section class="card kpi-chart" data-wid="c_rank">
           <div class="card-title"><h3>团队综合评分排名</h3><span class="sub">Z分数均值映射 · 50=团队均值${refDate ? ' · ' + U.md(refDate) + ' 时点' : ''}</span></div>
           <div style="overflow-x:auto"><table class="tbl">
             <thead><tr><th>排名</th><th>运动员</th><th class="r">综合分</th><th class="r">Z均值</th><th>优势项</th><th>劣势项</th></tr></thead>
@@ -408,7 +414,7 @@ Views.kpi = (() => {
               </tr>`).join('')}</tbody>
           </table></div>
         </section>`,
-      c_rm: (sz) => !rmWidgetData ? '' : `<section class="card ld-widget ld-chart" data-wid="c_rm" data-size="${sz}">
+      c_rm: (sz) => !rmWidgetData ? '' : `<section class="card kpi-chart" data-wid="c_rm">
           <div class="card-title"><h3>1RM 力量变化</h3>
             <div class="row" style="gap:10px;align-items:center">
               <span class="sub">${rmWidgetData.pts.length ? `共 ${rmWidgetData.pts.length} 次记录${rmWidgetData.delta != null ? ` · ${rmWidgetData.first} → ${rmWidgetData.last} kg · ${rmWidgetData.delta > 0 ? '+' : ''}${rmWidgetData.delta.toFixed(1)}%` : ''}` : '该时间范围内暂无记录'}</span>
@@ -418,7 +424,7 @@ Views.kpi = (() => {
           </div>
           ${rmWidgetData.pts.length ? `<div class="chart" id="chRmTrend" style="height:260px"></div>` : `<p class="hint" style="padding:26px;text-align:center;border:1px dashed var(--border);border-radius:8px">该时间范围内暂无「${U.esc(rmWidgetData.opt.ex.name)}」1RM 记录——更换时间范围或动作</p>`}
         </section>`,
-      c_trend: (sz) => !trendOk ? '' : `<section class="card ld-widget" data-wid="c_trend" data-size="${sz}">
+      c_trend: (sz) => !trendOk ? '' : `<section class="card kpi-chart" data-wid="c_trend">
           <div class="card-title"><h3>纵向追踪趋势</h3>
             <div class="row" style="gap:10px;align-items:center">
               <span class="sub">基线 → 当前 · Δ% 变化幅度</span>
@@ -469,7 +475,7 @@ Views.kpi = (() => {
       c_fms: (sz) => !fmsCur ? '' : (() => {
         const asymmKeys = fmsCur.fmsAsymm || [];
         const tColor = fmsTotal > 14 ? UI.cssVar('var(--color-success)') : fmsTotal === 14 ? UI.cssVar('var(--color-warning)') : UI.cssVar('var(--color-danger)');
-        return `<section class="card ld-widget" data-wid="c_fms" data-size="${sz}">
+        return `<section class="card kpi-chart" data-wid="c_fms">
           <div class="card-title"><h3>FMS 功能性动作筛查</h3><span class="sub">7 项动作模式 · 每项 0–3 分 · ${U.md(fmsCur.date)}</span></div>
           <div class="grid2" style="align-items:start">
             <div class="chart" id="chFms" style="height:300px"></div>
@@ -499,17 +505,28 @@ Views.kpi = (() => {
       })()
     };
 
-    // Render widgets in dashboard order; unknown ids skipped
+    // Render widgets: tiles grouped in overview row, charts each full-width row
     const dash = activeDashboard();
     const widgets = (dash && Array.isArray(dash.widgets) && dash.widgets.length) ? dash.widgets : Store.defaultKpiDashboards().items[0].widgets;
     const hasWidget = (id) => widgets.some((w) => w.id === id);
-    const widgetHtml = widgets.map((w) => (W[w.id] ? W[w.id](w.size) : '')).join('');
 
-    if (!widgetHtml.trim()) {
+    // Separate tiles and charts
+    const tiles = [], charts = [];
+    widgets.forEach((w) => {
+      const html = W[w.id] ? W[w.id](w.size) : '';
+      if (!html) return;
+      if (ROLE[w.id] === 'tile') tiles.push(html);
+      else charts.push(html);
+    });
+
+    if (!tiles.length && !charts.length) {
       el.innerHTML = `<div class="card"><p class="hint" style="padding:26px;text-align:center">该运动员暂无体能分析数据——前往 <a href="#/profile" style="color:var(--accent)">运动员档案</a> 点击「＋ 添加体能数据」录入后，此处自动生成分析</p></div>`;
       return;
     }
-    el.innerHTML = `<div class="ld-grid">${widgetHtml}</div>`;
+
+    const tilesRow = tiles.length ? `<div class="kpi-tiles-row">${tiles.join('')}</div>` : '';
+    const chartsRows = charts.map((h) => `<div class="kpi-chart-row">${h}</div>`).join('');
+    el.innerHTML = `<div class="kpi-layout">${tilesRow}${chartsRows}</div>`;
 
     // 图表初始化（按看板组件守卫）
     if (hasWidget('c_pct') && kpiRows.length) initKpiPct(el.querySelector('#chKpiPct'), kpiRows);

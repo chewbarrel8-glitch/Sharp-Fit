@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('api', {
   exportFileAs: (name, data, filters) => ipcRenderer.invoke('export:saveAs', { name, data, filters }),
   appInfo: () => ipcRenderer.invoke('app:info'),
   openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
-  backupDB: () => ipcRenderer.invoke('db:backup')
+  backupDB: () => ipcRenderer.invoke('db:backup'),
+  setWindowSize: (w, h) => ipcRenderer.invoke('win:setSize', { w, h })
 });

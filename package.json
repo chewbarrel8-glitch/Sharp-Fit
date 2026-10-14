@@ -1,7 +1,7 @@
 {
   "name": "training-plan-platform",
   "productName": "Sharp Fit",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "体能教练训练计划管理平台",
   "main": "main.js",
   "author": "Coach",

@@ -7,10 +7,9 @@
     { id: 'micro', no: '03', label: '小周期', sub: '周节奏管理 · 类型与强度分布' },
     { id: 'session', no: '04', label: '训练课', sub: '每日多节课 · sRPE · RIR 估算 1RM' },
     { id: 'load', no: '05', label: '负荷管理', sub: 'ACWR 仪表盘 · 个人/团队负荷看板' },
-    { id: 'exercises', no: '06', label: '动作库', sub: '两级分类 · 动作管理' },
-    { id: 'profile', no: '07', label: '运动员档案', sub: '基本信息 · 统一体能数据源 · 1RM' },
-    { id: 'kpi', no: '08', label: 'KPI 分析', sub: 'KPI 看板 · 雷达 · FMS · 时期对比 · 团队排名' },
-    { id: 'settings', no: '09', label: '设置', sub: '外观背景 · 数据备份 · 使用手册 · 项目库 · 关于' }
+    { id: 'profile', no: '06', label: '运动员档案', sub: '基本信息 · 统一体能数据源 · 1RM' },
+    { id: 'kpi', no: '07', label: 'KPI 分析', sub: 'KPI 看板 · 雷达 · FMS · 时期对比 · 团队排名' },
+    { id: 'settings', no: '08', label: '设置', sub: '外观背景 · 数据备份 · 使用手册 · 项目库 · 关于' }
   ];
 
   function currentRoute() {
@@ -23,11 +22,8 @@
     const meta = NAV.find((n) => n.id === route);
     $('#pageTitle').textContent = meta.label;
     $('#pageSub').textContent = meta.sub;
-    $$('.nav-item').forEach((el) => {
-      const active = el.dataset.id === route;
-      el.classList.toggle('active', active);
-      el.setAttribute('aria-current', active ? 'page' : 'false');
-    });
+    // 侧边栏已删除，nav-item 不存在，跳过 active 切换
+    if (window.Nav) Nav.setActive(route);
     const gear = document.getElementById('navSettings');
     if (gear) gear.classList.toggle('on', route === 'settings');
     UI.disposeCharts();
@@ -46,20 +42,8 @@
   }
 
   function buildNav() {
-    // 设置入口固定在侧栏左下角（齿轮图标 #navSettings），主导航列表不再重复渲染
-    $('#nav').innerHTML = NAV.filter((n) => n.id !== 'settings').map((n) => `
-      <button type="button" class="nav-item" data-id="${n.id}" aria-label="${n.label}">
-        <span class="no">${n.no}</span><span class="lbl">${n.label}</span>
-      </button>`).join('');
-    $$('.nav-item').forEach((el) => { el.onclick = () => { location.hash = '#/' + el.dataset.id; }; });
-    const gear = document.getElementById('navSettings');
-    if (gear) {
-      gear.onclick = () => { location.hash = '#/settings'; };
-      // 齿轮文案还原为原始简体（齿轮在 index.html 中是静态节点，无刷新切换语言时需随导航一起重建原文再翻译）
-      gear.title = '设置';
-      const gt = gear.querySelector('.side-gear-t');
-      if (gt) gt.textContent = '设置';
-    }
+    // 侧边栏已删除，仅构建底部 dock 导航
+    if (window.Nav) Nav.build(NAV, { onNavigate: (id) => { location.hash = '#/' + id; } });
     window.addEventListener('hashchange', render);
   }
 

@@ -79,10 +79,36 @@ ipcMain.handle('db:backup', () => {
   }
 });
 
+// 窗口大小调整：设置页「应用到当前窗口」
+ipcMain.handle('win:setSize', (e, { w, h }) => {
+  try {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    if (win) {
+      const width = Math.max(800, Math.min(2560, Number(w) || 1440));
+      const height = Math.max(600, Math.min(1600, Number(h) || 920));
+      win.setSize(width, height);
+      win.center();
+      return { ok: true, width, height };
+    }
+    return { ok: false, msg: '窗口不存在' };
+  } catch (err) {
+    console.error('win:setSize failed', err);
+    return { ok: false, msg: err.message };
+  }
+});
+
 function createWindow() {
+  // 读取保存的窗口大小
+  let winW = 1440, winH = 920;
+  try {
+    const db = safeReadJson(dbPath());
+    const a = db && db.settings && db.settings.appearance;
+    if (a && a.winW) winW = Math.max(800, Math.min(2560, a.winW));
+    if (a && a.winH) winH = Math.max(600, Math.min(1600, a.winH));
+  } catch (e) { /* 忽略 */ }
   const win = new BrowserWindow({
-    width: 1440,
-    height: 920,
+    width: winW,
+    height: winH,
     minWidth: 1200,
     minHeight: 780,
     title: 'Sharp Fit',

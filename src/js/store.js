@@ -209,17 +209,17 @@ const Store = {
           isDefault: true,
           widgets: [
             { id: 'c_pct',   size: 'primary' },
-            { id: 'c_rm',    size: 'primary' },
             { id: 'm_pct',   size: 'secondary' },
             { id: 'm_lead',  size: 'secondary' },
             { id: 'm_gain',  size: 'secondary' },
+            { id: 'c_rm',    size: 'primary' },
             { id: 'm_fms',   size: 'secondary' },
             { id: 'c_delta', size: 'secondary' },
-            { id: 'c_radar', size: 'secondary' },
-            { id: 'c_zbar',  size: 'secondary' },
-            { id: 'c_fms',   size: 'secondary' },
-            { id: 'c_trend', size: 'secondary' },
-            { id: 'c_rank',  size: 'secondary' }
+            { id: 'c_radar', size: 'primary' },
+            { id: 'c_zbar',  size: 'primary' },
+            { id: 'c_fms',   size: 'primary' },
+            { id: 'c_trend', size: 'primary' },
+            { id: 'c_rank',  size: 'primary' }
           ]
         }
       ]

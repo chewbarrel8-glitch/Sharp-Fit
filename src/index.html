@@ -5,44 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sharp Fit</title>
   <link rel="stylesheet" href="../tokens.css" />
-  <link rel="stylesheet" href="css/style.css?v=wk1" />
+  <link rel="stylesheet" href="css/style.css?v=wk4" />
   <link rel="stylesheet" href="css/onboarding.css?v=18" />
 </head>
 <body>
   <script src="js/onboarding.js?v=18"></script>
   <div id="app">
-    <aside id="sidebar" aria-label="主导航">
-      <div class="brand">
-        <div class="brand-mark">
-          <img src="assets/logo.png" alt="Sharp Fit" class="brand-img" />
-        </div>
-        <div class="brand-txt">
-          <strong>Sharp Fit</strong>
-          <em>STRENGTH · PERIODIZATION</em>
-        </div>
-      </div>
-      <nav id="nav" aria-label="功能导航"></nav>
-      <div class="side-foot">
-        <button type="button" class="side-gear" id="navSettings" title="设置" aria-label="设置">
-          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"></path>
-          </svg>
-          <span class="side-gear-t">设置</span>
-        </button>
-      </div>
-    </aside>
     <main id="main">
       <header id="topbar">
         <div class="tb-left">
-          <h1 id="pageTitle">大周期</h1>
-          <p id="pageSub"></p>
+          <div class="brand-mini">
+            <img src="assets/logo.png" alt="Sharp Fit" class="brand-mini-img" />
+            <div>
+              <h1 id="pageTitle">大周期</h1>
+              <p id="pageSub"></p>
+            </div>
+          </div>
         </div>
         <div class="tb-right" id="topbarRight"></div>
       </header>
       <section id="view" aria-live="polite"></section>
     </main>
   </div>
+  <!-- 底部浮动 dock -->
+  <nav id="dock" aria-label="快捷导航"></nav>
+  <!-- 命令面板 -->
+  <div id="cmdPalette" aria-hidden="true"></div>
   <div id="bgFx" aria-hidden="true"></div>
   <div id="toastWrap" aria-live="polite" aria-atomic="true"></div>
 
@@ -51,7 +39,9 @@
   <script src="js/util.js"></script>
   <script src="js/sports.js"></script>
   <script src="js/i18n.js"></script>
-  <script src="js/store.js?v=kd1"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/cmdpalette.js"></script>
+  <script src="js/store.js?v=kd2"></script>
   <script src="js/ui.js"></script>
   <script src="js/views/macro.js"></script>
   <script src="js/views/meso.js?v=wk1"></script>
@@ -60,11 +50,11 @@
   <script src="js/views/load.js?v=ld3"></script>
   <script src="js/views/exercises.js"></script>
   <script src="js/views/profile.js"></script>
-  <script src="js/views/kpi.js?v=kd1"></script>
+  <script src="js/views/kpi.js?v=kd3"></script>
   <script src="js/views/kpiLab.js?v=wk1"></script>
   <script src="js/views/importTest.js"></script>
-  <script src="js/views/settings.js?v=kd1"></script>
+  <script src="js/views/settings.js?v=kd2"></script>
   <script src="js/demo.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=kd3"></script>
 </body>
 </html>

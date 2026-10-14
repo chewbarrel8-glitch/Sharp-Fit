@@ -1,5 +1,5 @@
-// 底部停靠栏（可选导航布局）：图标 + 悬停放大 + 名称气泡 + 当前页圆点
-// app.js 调用：Nav.build(NAV, { onNavigate }) / Nav.setActive(id)
+// 导航层：侧栏滑动高亮 + 底部 dock + 状态徽标
+// app.js 调用：Nav.build(NAV) / Nav.setActive(id) / Nav.syncSlider()
 window.Nav = (() => {
   const ICONS = {
     macro: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9.5h18M8 3v3M16 3v3"/>',
@@ -13,53 +13,107 @@ window.Nav = (() => {
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>'
   };
   const ico = (id) => `<svg class="nv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[id] || ''}</svg>`;
-  const esc = (s) => (window.U ? U.esc(s) : String(s == null ? '' : s));
 
-  let ITEMS = [], layout = 'sidebar', active = 'macro';
-  let onNavigate = () => {};
-  const els = {};
+  let ITEMS = [], active = 'macro';
+  let statusMap = {};   // { id: { dot: bool, count: number } }
+  let onNavigate = null;
 
-  function buildDock() {
-    const box = document.createElement('div');
-    box.id = 'navDock';
-    box.className = 'nav-dock';
-    box.innerHTML = `<div class="nd-rail">
-      ${ITEMS.map((it) => `<button type="button" class="nd-item" data-id="${it.id}" aria-label="${esc(it.label)}">
-        <span class="nd-ico">${ico(it.id)}</span>
-        <span class="nd-tip">${esc(it.label)}</span>
-        <i class="nd-current" aria-hidden="true"></i>
-      </button>`).join('')}
-    </div>`;
-    document.body.appendChild(box);
-    els.dock = box;
-    $$('.nd-item', box).forEach((el) => { el.onclick = () => onNavigate(el.dataset.id); });
+  function syncSlider(id) {
+    const slider = document.getElementById('navSlider');
+    if (!slider) return;
+    const target = document.querySelector(`.nav-item[data-id="${id}"]`);
+    if (!target) { slider.style.opacity = 0; return; }
+    const nav = document.getElementById('nav');
+    if (!nav) return;
+    const navRect = nav.getBoundingClientRect();
+    const tRect = target.getBoundingClientRect();
+    slider.style.opacity = 1;
+    slider.style.top = (tRect.top - navRect.top) + 'px';
+    slider.style.height = tRect.height + 'px';
+    // width 留一点 padding 让滑块不贴满
+    slider.style.width = 'calc(100% - 16px)';
   }
 
-  function applyLayout() { document.body.dataset.nav = layout; }
-  function setLayout(next) { layout = next || 'sidebar'; applyLayout(); }
+  function buildDock() {
+    const dock = document.getElementById('dock');
+    if (!dock) return;
+    dock.innerHTML = ITEMS.map((it) => `
+      <button type="button" class="dock-item ${it.id === active ? 'active' : ''}" data-id="${it.id}" aria-label="${it.label}">
+        <span class="dock-ico">${ico(it.id)}</span>
+        <span class="dock-label">${it.label}</span>
+        <i class="dock-dot" aria-hidden="true"></i>
+      </button>`).join('');
+    dock.querySelectorAll('.dock-item').forEach((el) => {
+      el.onclick = () => { if (onNavigate) onNavigate(el.dataset.id); };
+    });
+  }
 
-  // 侧栏（原样式）与停靠栏的激活态在这里统一同步
+  function syncDock(id) {
+    const dock = document.getElementById('dock');
+    if (!dock) return;
+    dock.querySelectorAll('.dock-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.id === id);
+    });
+  }
+
+  function syncBadges(items) {
+    items.forEach((it) => {
+      const el = document.querySelector(`.nav-item[data-id="${it.id}"]`);
+      if (!el) return;
+      const st = statusMap[it.id];
+      let right = el.querySelector('.nav-right');
+      if (!right) {
+        right = document.createElement('span');
+        right.className = 'nav-right';
+        el.appendChild(right);
+      }
+      right.innerHTML = '';
+      if (st && st.dot) {
+        const dot = document.createElement('i');
+        dot.className = 'nav-dot';
+        right.appendChild(dot);
+      }
+      if (st && st.count > 0) {
+        const b = document.createElement('span');
+        b.className = 'nav-badge';
+        b.textContent = st.count > 99 ? '99+' : st.count;
+        right.appendChild(b);
+      }
+    });
+  }
+
   function setActive(id) {
     active = id;
-    $$('.nav-item').forEach((el) => el.classList.toggle('active', el.dataset.id === id));
-    if (els.dock) $$('.nd-item', els.dock).forEach((el) => el.classList.toggle('active', el.dataset.id === id));
+    syncSlider(id);
+    syncDock(id);
+    // 导航到的项清除徽标
+    if (statusMap[id]) {
+      statusMap[id].dot = false;
+      statusMap[id].count = 0;
+      syncBadges(ITEMS);
+    }
+  }
+
+  function setStatus(map) {
+    statusMap = { ...statusMap, ...map };
+    syncBadges(ITEMS);
   }
 
   function build(items, opts) {
     if (Array.isArray(items) && items.length) ITEMS = items;
     if (opts && typeof opts.onNavigate === 'function') onNavigate = opts.onNavigate;
-    const old = document.getElementById('navDock');
-    if (old) old.remove();
     buildDock();
-    layout = ((Store.data.settings.appearance) || {}).navLayout || 'sidebar';
-    applyLayout();
-    setActive(active);
+    syncBadges(ITEMS);
+    // 首次渲染后等一帧再算滑块（布局刚完成）
+    requestAnimationFrame(() => syncSlider(active));
   }
 
   return {
     build,
     setActive,
-    setLayout,
-    get layout() { return layout; }
+    syncSlider,
+    setStatus,
+    get items() { return ITEMS; },
+    get active() { return active; }
   };
 })();
