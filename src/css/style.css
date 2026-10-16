@@ -160,6 +160,8 @@ input[type="number"].ipt { font-variant-numeric: tabular-nums; }
 .tbl .num { font-variant-numeric: tabular-nums; }
 .tbl .r { text-align: right; }
 .tbl input.ipt, .tbl select.sel { padding: 5px 8px; font-size: 12.5px; }
+.lm-tbl .lm-in { width: 76px; text-align: right; }
+.lm-tbl .lm-rpe, .lm-tbl .lm-mins { width: 64px; }
 .athlete-plan-table { width: max-content; min-width: 100%; table-layout: auto; }
 .athlete-plan-table .athlete-action-col, .athlete-plan-table .athlete-action-cell { width: 190px; min-width: 190px; }
 .athlete-plan-table .athlete-action-cell { white-space: nowrap; }

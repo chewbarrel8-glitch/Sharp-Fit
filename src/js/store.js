@@ -405,6 +405,26 @@ const Store = {
     return Store.builtinCats().map(([name, children]) => mk(name, children));
   },
 
+  // English display names of builtin categories can leak into stored library data
+  // (e.g. packages built on another locale). Normalize them back to canonical Chinese
+  // before merge so duplicate English category groups are never created.
+  enCatName(n) {
+    return ({
+      'Lower Body Strength': '下肢力量', 'Upper Body Strength': '上肢力量',
+      'Full-body Power': '全身爆发力', 'Core & Trunk': '核心与躯干',
+      'Energy Systems': '能量系统', 'Speed & Agility': '速度与敏捷',
+      'Recovery & Regeneration': '恢复与再生',
+      'Back Squat Series': '深蹲系列', 'Deadlift Series': '硬拉系列',
+      'Single-leg Series': '单腿系列', 'Calves & Feet': '小腿与足踝',
+      'Push': '推类', 'Pull': '拉类', 'Arms': '手臂',
+      'Olympic Lifts': '奥林匹克举重', 'Jumps': '跳跃类', 'Medicine Ball & Toss': '药球与抛掷',
+      'Anti-extension': '抗伸展', 'Anti-rotation': '抗旋转', 'Dynamic Core': '动态核心',
+      'Anaerobic Power': '无氧功率', 'Aerobic Endurance': '有氧耐力', 'Interval Training': '间歇训练',
+      'Sprint & Acceleration': '冲刺与加速', 'COD & Agility': '变向与灵敏',
+      'Stretching': '拉伸', 'Fascia Release': '筋膜放松', 'Breathing Training': '呼吸训练'
+    })[n] || n;
+  },
+
   // 内置动作目录：[一级分类, 二级分类, 名称, 器械, 计量单位(reps=次/distance=米/duration=秒), 负荷类型(resistance=抗阻带重量/bodyweight=自重/cardio=能量系统位移)]
   // 计量单位决定训练课该行录「组×次 / 组×距离 / 组×做功时间」；负荷类型决定是否显示 %1RM/重量/RIR 列
   builtinExDefs() {
@@ -709,15 +729,17 @@ const Store = {
         const lib = pack.library || {};
         const maps = {};                                  // 'kind:oldId' → newId
         const nid = (kind, old) => { const k = kind + ':' + old; if (!maps[k]) maps[k] = U.uid(kind); return maps[k]; };
-        // ---- 分类库合并 ----
-        (lib.categories1 || []).forEach((c1) => {
+        // ---- 分类库合并（英文内置分类先归一化为中文规范名，避免重复英文分组） ----
+        (lib.categories1 || []).forEach((c1Raw) => {
+          const c1 = Object.assign({}, c1Raw, { name: Store.enCatName(c1Raw.name) });
           let hit = d.categories1.find((x) => x.id === c1.id) || d.categories1.find((x) => x.name === c1.name);
           if (!hit) { hit = { id: U.uid('c1'), name: c1.name, children: [] }; d.categories1.push(hit); }
-          maps['c1:' + c1.id] = hit.id;
-          (c1.children || []).forEach((c2) => {
+          maps['c1:' + c1Raw.id] = hit.id;
+          (c1.children || []).forEach((c2Raw) => {
+            const c2 = Object.assign({}, c2Raw, { name: Store.enCatName(c2Raw.name) });
             let h2 = hit.children.find((x) => x.id === c2.id) || hit.children.find((x) => x.name === c2.name);
             if (!h2) { h2 = { id: U.uid('c2'), name: c2.name }; hit.children.push(h2); }
-            maps['c2:' + c2.id] = h2.id;
+            maps['c2:' + c2Raw.id] = h2.id;
           });
         });
         // ---- 动作库合并（同名视为同一动作） ----
@@ -787,6 +809,8 @@ const Store = {
           ns.id = nid('ses', s.id);
           ns.athletes = (s.athletes || []).filter((aid) => athNew[aid]).map((aid) => athNew[aid]);
           ns.athSrpe = mapAthKeys(s.athSrpe);
+          ns.athMins = mapAthKeys(s.athMins);
+          ns.athDose = mapAthKeys(s.athDose);
           ns.results = mapAthKeys(s.results);
           mapExDeep(ns);
           d.sessions.push(ns);
@@ -1083,11 +1107,13 @@ const Store = {
   // 逐组明细（setDefs/setLogs）：热身+正式均统计，done=false 的组不计，重量按组各自回退（组重量→1RM×组%1RM→行重量）
   sessionActualDose(ses, aid, opts) {
     const actualOnly = !!(opts && opts.actualOnly);
+    const rawManual = !!(opts && opts.rawManual);   // skip ses.athDose overrides (diff base in editor)
     const out = { kg: 0, m: 0, s: 0, reps: 0, bands: { sprint: 0, hsr: 0, moderate: 0, aerobic: 0 } };
     const scope = Store.athleteSetForScope(aid);
     const aids = aid ? [aid] : ((ses.athletes || []).filter((id) => !scope || scope.has(id)));
     if (!aids.length) return out;
     aids.forEach((id) => {
+      const sub = { kg: 0, m: 0, s: 0, reps: 0, bands: { sprint: 0, hsr: 0, moderate: 0, aerobic: 0 } };
       const res = (ses.results || {})[id] || [];
       (ses.rows || []).forEach((r, i) => {
         const rs = res[i] || {};
@@ -1106,18 +1132,18 @@ const Store = {
             if (!lg.own || v == null || isNaN(v)) v = Calc.setDefDose(r, d0);
             if (!v) return;
             if (metric === 'reps') {
-              out.reps += v;
+              sub.reps += v;
               // 仅 kg 重量行计吨位（BW/—行不计）
               if (Calc.rowUnit(r) === 'kg') {
                 let w = lg.own && lg.w != null ? Number(lg.w) : NaN;
                 if (!w || isNaN(w)) w = Calc.setDefWeight(d0, rm ? rm.value : null) || Number(r.weight) || 0;
-                out.kg += (w || 0) * v;
+                sub.kg += (w || 0) * v;
               }
             } else if (metric === 'distance') {
-              out.m += v;
-              out.bands[Calc.setDefSpeedBand(r, d0)] += v;
+              sub.m += v;
+              sub.bands[Calc.setDefSpeedBand(r, d0)] += v;
             } else if (metric === 'duration') {
-              out.s += v;
+              sub.s += v;
             }
           });
           return;
@@ -1127,20 +1153,31 @@ const Store = {
         const dose = d.total;
         if (!dose) return;
         if (metric === 'reps') {
-          out.reps += dose;
+          sub.reps += dose;
           // 仅 kg 重量行计吨位（自重/无负荷动作重量=0，自然为 0；任何 kg 行动作只要设置了重量/1RM 都计入）
           if (Calc.rowUnit(r) === 'kg') {
             const rm = Store.athRm(id, r.exId);
             const w = rs.w != null ? rs.w : (rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight);
-            out.kg += (Number(w) || 0) * dose;
+            sub.kg += (Number(w) || 0) * dose;
           }
         } else if (metric === 'distance') {
-          out.m += dose;
-          out.bands[Calc.rowSpeedBand(r)] += dose;
+          sub.m += dose;
+          sub.bands[Calc.rowSpeedBand(r)] += dose;
         } else if (metric === 'duration') {
-          out.s += dose;
+          sub.s += dose;
         }
       });
+      // Manual post-hoc overrides (ses.athDose[aid]): per metric, an explicit non-negative
+      // value replaces the computed contribution for this athlete; unset metrics stay computed.
+      const ov = rawManual ? null : (ses.athDose || {})[id];
+      if (ov) {
+        [['kg', 'kg'], ['reps', 'reps'], ['m', 'm'], ['s', 's']].forEach(([mk, dk]) => {
+          const v = Number(ov[mk]);
+          if (Number.isFinite(v) && v >= 0) sub[dk] = v;
+        });
+      }
+      out.kg += sub.kg; out.reps += sub.reps; out.m += sub.m; out.s += sub.s;
+      Object.keys(out.bands).forEach((k) => { out.bands[k] += sub.bands[k]; });
     });
     return out;
   },

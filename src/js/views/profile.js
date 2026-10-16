@@ -123,6 +123,8 @@ Views.profile = (() => {
         });
         if (next.results && typeof next.results === 'object') delete next.results[aid];
         if (next.athSrpe && typeof next.athSrpe === 'object') delete next.athSrpe[aid];
+        if (next.athMins && typeof next.athMins === 'object') delete next.athMins[aid];
+        if (next.athDose && typeof next.athDose === 'object') delete next.athDose[aid];
         return next;
       });
       Store.data.macros.forEach((m) => { m.athletes = (m.athletes || []).filter((id) => id !== aid); });

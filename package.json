@@ -1,7 +1,7 @@
 {
   "name": "training-plan-platform",
   "productName": "Sharp Fit",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Sharp Fit - Training Plan Management Platform for Strength & Conditioning Coaches",
   "main": "main.js",
   "author": "Coach",

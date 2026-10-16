@@ -201,6 +201,12 @@ Views.macro = (() => {
             if (next.athSrpe && typeof next.athSrpe === 'object') {
               for (const id of athIdSet) delete next.athSrpe[id];
             }
+            if (next.athMins && typeof next.athMins === 'object') {
+              for (const id of athIdSet) delete next.athMins[id];
+            }
+            if (next.athDose && typeof next.athDose === 'object') {
+              for (const id of athIdSet) delete next.athDose[id];
+            }
             return next;
           });
           d.tests = (d.tests || []).filter((t) => !athIdSet.has(t.athleteId));

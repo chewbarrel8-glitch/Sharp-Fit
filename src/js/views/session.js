@@ -2,48 +2,97 @@
 Views.session = (() => {
   const state = { date: U.today(), folded: {}, expandedAthSetRows: new Set() };   // folded: 课程卡折叠视图态；expandedAthSetRows: athleteId:rowId
 
-  // 完课负荷摘要弹窗：每人 sRPE/时长/AU/吨位/次数/距离/做功 + 团队合计行
-  // onSave(true)=保存并纳入统计；onSave(false)=不保存
-  function showLoadSummaryModal(ses, mins, onSave) {
+  // Post-session load review: per-athlete editable sRPE / duration / external dose,
+  // AU live-computed (sRPE x minutes), team totals summed live.
+  // Edited ext values become per-athlete manual overrides (ses.athDose); unchanged inputs stay dynamic.
+  // onSave(true)=保存并纳入统计；onSave(false)=不保存。opts.title overrides the modal title.
+  function showLoadSummaryModal(ses, mins, onSave, opts = {}) {
     const athIds = ses.athletes || [];
-    let tKg = 0, tReps = 0, tM = 0, tS = 0, tAu = 0;
+    const METRICS = [['kg', '吨位(kg)'], ['reps', '次数'], ['m', '距离(m)'], ['s', '做功(s)']];
+    // Effective dose (manual override applied) for input seeds; zero metrics start blank
+    const eff = (aid) => Store.sessionActualDose(ses, aid);
+    // Raw dose (ignores manual overrides) used as diff base: equal input stays dynamic
+    const raw = (aid) => Store.sessionActualDose(ses, aid, { rawManual: true });
+    const numOrEmpty = (v) => (v ? Math.round(v * 100) / 100 : '');
     const rowsHtml = athIds.map((aid) => {
       const a = Store.data.athletes.find((x) => x.id === aid);
-      const d = Store.sessionActualDose(ses, aid);
-      const rpe = (ses.athSrpe || {})[aid] != null ? ses.athSrpe[aid] : (ses.srpe ?? 6);
-      const au = Math.round((rpe || 0) * mins);
-      tKg += d.kg; tReps += d.reps; tM += d.m; tS += d.s; tAu += au;
-      return `<tr>
+      const d = eff(aid);
+      const rpe = (ses.athSrpe || {})[aid] != null ? ses.athSrpe[aid] : (ses.srpe ?? 0);
+      const rowMins = (ses.athMins || {})[aid] != null ? ses.athMins[aid] : (Number(mins) || Number(ses.duration) || 0);
+      return `<tr data-aid="${aid}">
         <td>${U.esc(a ? a.name : aid)}</td>
-        <td class="r num">${rpe ?? '—'}</td>
-        <td class="r num">${mins}</td>
-        <td class="r num"><b>${U.fmt(au)}</b></td>
-        <td class="r num">${d.kg ? U.fmt(Math.round(d.kg)) : '—'}</td>
-        <td class="r num">${d.reps ? U.fmt(d.reps) : '—'}</td>
-        <td class="r num">${d.m ? U.fmt(d.m) : '—'}</td>
-        <td class="r num">${d.s ? U.fmt(Math.round(d.s)) : '—'}</td>
+        <td class="r"><input class="ipt lm-in lm-rpe" type="number" min="0" max="10" step="0.5" value="${rpe ?? 0}"></td>
+        <td class="r"><input class="ipt lm-in lm-mins" type="number" min="0" step="1" value="${rowMins}"></td>
+        <td class="r num lm-au"><b>0</b></td>
+        ${METRICS.map(([k]) => `<td class="r"><input class="ipt lm-in lm-${k}" type="number" min="0" step="any" value="${numOrEmpty(d[k])}" placeholder="—"></td>`).join('')}
       </tr>`;
     }).join('') || '<tr><td colspan="8" class="hint" style="text-align:center">尚未选择参训运动员</td></tr>';
     UI.modal({
-      title: `结束训练 · ${U.esc(ses.name)} · 本节课负荷`,
+      title: opts.title || `结束训练 · ${U.esc(ses.name)} · 本节课负荷`,
       wide: true,
-      body: `<p class="hint" style="margin:0 0 10px">时长 <b>${mins}</b> 分钟 · 内部负荷 = sRPE × 时长 · 外部负荷含热身组+正式组全部完成量</p>
-        <div class="tbl-wrap"><table class="tbl" style="font-size:12px">
+      body: `<p class="hint" style="margin:0 0 10px">默认时长 <b>${mins}</b> 分钟，可按人调整 · 内部负荷 = sRPE × 时长 · 外部负荷可按人手动修正，留空则取计划表实际完成量</p>
+        <div class="tbl-wrap"><table class="tbl lm-tbl" style="font-size:12px">
           <thead><tr><th>运动员</th><th class="r">sRPE</th><th class="r">时长(min)</th><th class="r">负荷(AU)</th><th class="r">吨位(kg)</th><th class="r">次数</th><th class="r">距离(m)</th><th class="r">做功(s)</th></tr></thead>
           <tbody>${rowsHtml}
-            <tr style="font-weight:700;background:color-mix(in oklch,var(--color-accent) 8%,transparent)">
-              <td>团队合计</td><td></td><td class="r num">${athIds.length ? mins : '—'}</td>
-              <td class="r num">${U.fmt(tAu)}</td>
-              <td class="r num">${tKg ? U.fmt(Math.round(tKg)) : '—'}</td>
-              <td class="r num">${tReps ? U.fmt(tReps) : '—'}</td>
-              <td class="r num">${tM ? U.fmt(tM) : '—'}</td>
-              <td class="r num">${tS ? U.fmt(Math.round(tS)) : '—'}</td>
+            <tr class="lm-total" style="font-weight:700;background:color-mix(in oklch,var(--color-accent) 8%,transparent)">
+              <td>团队合计</td><td></td><td class="r num t-mins">0</td><td class="r num t-au">0</td>
+              <td class="r num t-kg">—</td><td class="r num t-reps">—</td><td class="r num t-m">—</td><td class="r num t-s">—</td>
             </tr>
           </tbody>
-        </table></div>`,
+        </table></div>
+        <p class="hint" style="margin:8px 0 0">手动填写的外部负荷会固定为本节课统计值；清空输入框则恢复按计划表自动汇总。</p>`,
       footer: `<button class="btn ghost" data-discard>不保存</button><button class="btn primary" data-save>保存并纳入统计</button>`,
       onMount(ov, close) {
-        ov.querySelector('[data-save]').onclick = () => { close(); onSave(true); };
+        const sumOrDash = (v) => (v ? U.fmt(Math.round(v)) : '—');
+        const recalc = () => {
+          let tMins = 0, tAu = 0, tKg = 0, tReps = 0, tM = 0, tS = 0;
+          ov.querySelectorAll('tbody tr[data-aid]').forEach((tr) => {
+            const rpe = Number(tr.querySelector('.lm-rpe').value) || 0;
+            const m = Number(tr.querySelector('.lm-mins').value) || 0;
+            const au = Math.round(rpe * m);
+            tr.querySelector('.lm-au').innerHTML = '<b>' + U.fmt(au) + '</b>';
+            tMins += m; tAu += au;
+            tKg += Number(tr.querySelector('.lm-kg').value) || 0;
+            tReps += Number(tr.querySelector('.lm-reps').value) || 0;
+            tM += Number(tr.querySelector('.lm-m').value) || 0;
+            tS += Number(tr.querySelector('.lm-s').value) || 0;
+          });
+          ov.querySelector('.t-mins').textContent = athIds.length ? tMins : '—';
+          ov.querySelector('.t-au').textContent = U.fmt(tAu);
+          ov.querySelector('.t-kg').textContent = sumOrDash(tKg);
+          ov.querySelector('.t-reps').textContent = sumOrDash(tReps);
+          ov.querySelector('.t-m').textContent = sumOrDash(tM);
+          ov.querySelector('.t-s').textContent = sumOrDash(tS);
+        };
+        ov.querySelectorAll('.lm-in').forEach((inp) => { inp.addEventListener('input', recalc); });
+        recalc();
+        ov.querySelector('[data-save]').onclick = () => {
+          ses.athSrpe = ses.athSrpe || {};
+          ses.athMins = ses.athMins || {};
+          ses.athDose = ses.athDose || {};
+          ov.querySelectorAll('tbody tr[data-aid]').forEach((tr) => {
+            const aid = tr.dataset.aid;
+            const rpe = Number(tr.querySelector('.lm-rpe').value);
+            ses.athSrpe[aid] = Number.isFinite(rpe) ? rpe : 0;
+            const m = Number(tr.querySelector('.lm-mins').value);
+            if (Number.isFinite(m) && m > 0 && m !== Number(ses.duration)) ses.athMins[aid] = m;
+            else delete ses.athMins[aid];
+            // External dose: empty = clear override; unchanged-from-raw = keep dynamic; otherwise lock manual value
+            const base = raw(aid);
+            const prev = ses.athDose[aid] || {};
+            const next = {};
+            METRICS.forEach(([k]) => {
+              const inp = tr.querySelector('.lm-' + k);
+              const had = prev[k] != null;
+              if (inp.value === '') return;
+              const v = Number(inp.value);
+              if (!Number.isFinite(v) || v < 0) return;
+              if (had || Math.abs(v - (base[k] || 0)) > 0.001) next[k] = v;
+            });
+            if (Object.keys(next).length) ses.athDose[aid] = next; else delete ses.athDose[aid];
+          });
+          close(); onSave(true);
+        };
         ov.querySelector('[data-discard]').onclick = () => { close(); onSave(false); };
       }
     });
@@ -142,6 +191,46 @@ Views.session = (() => {
     if (r && r.ok) UI.toast('PDF 已导出', 'ok');
     else if (r && r.canceled) { /* user canceled: no toast */ }
     else UI.toast('PDF 导出失败' + (r && r.msg ? '：' + r.msg : ''), 'err');
+  }
+
+  // Post-hoc manual entry for sessions trained without the live timer:
+  // enter duration (and optional start time), then review the same load summary;
+  // saving marks the session done and writes load statistics exactly like the timer path
+  function showManualEntryModal(ses, onDone) {
+    UI.modal({
+      title: `手动补录 · ${U.esc(ses.name)}`,
+      body: `<p class="hint" style="margin:0 0 10px">适用于训练中未使用计时器的情况：训练结束后填写实际时长并纳入负荷统计。每人的实际重量/完成量、距离/做功与 sRPE 在课程卡的运动员计划表中填写。</p>
+        <div class="field" style="margin-bottom:10px"><label>训练时长（分钟）</label>
+          <input class="ipt" id="mnMins" type="number" min="1" step="1" value="${ses.duration ?? ''}" placeholder="如 90" autofocus></div>
+        <div class="field"><label>开始时间（选填）</label>
+          <input class="ipt" id="mnTime" type="time" value="${U.esc(ses.time || '')}"></div>`,
+      footer: `<button class="btn ghost" data-cancel>取消</button><button class="btn primary" data-ok>下一步：核对负荷</button>`,
+      onMount(ov, close) {
+        const minsEl = ov.querySelector('#mnMins');
+        minsEl.focus(); minsEl.select();
+        ov.querySelector('[data-cancel]').onclick = close;
+        ov.querySelector('[data-ok]').onclick = () => {
+          const mins = Math.round(Number(minsEl.value));
+          if (!Number.isFinite(mins) || mins <= 0) { UI.toast('请填写训练时长（分钟）', 'err'); return; }
+          const tm = ov.querySelector('#mnTime').value;
+          close();
+          ses.duration = mins;
+          if (tm) ses.time = tm;
+          ensureResults(ses);
+          showLoadSummaryModal(ses, mins, (save) => {
+            if (!save) return;   // discarded: nothing written, card keeps its previous state
+            ses.sStatus = 'done';
+            ses.sManual = true;
+            ses.sElapsed = mins * 60000;
+            ses.sStartDate = null;
+            syncEntries(ses); Store.save(); onDone && onDone();
+            UI.toast((ses.athletes || []).length
+              ? `已补录：${mins} 分钟，负荷已计算并纳入周期统计`
+              : `已记录时长 ${mins} 分钟（未选运动员，未生成个人负荷统计）`, 'ok');
+          }, { title: `手动补录 · ${U.esc(ses.name)} · 本节课负荷` });
+        };
+      }
+    });
   }
 
   // 自动计时：训练中课程卡上的 [data-timer] 每秒刷新（模块级单例，仅更新仍存在的节点）
@@ -311,12 +400,15 @@ Views.session = (() => {
   // 同步运动员负荷记录（按人 sRPE × 时长）
   function syncEntries(ses) {
     Store.data.loadEntries = Store.data.loadEntries.filter((e) => e.sessionId !== ses.id);
-    const duration = Number(ses.duration);
-    if (!(ses.athletes || []).length || !Number.isFinite(duration) || duration <= 0) return;
+    if (!(ses.athletes || []).length) return;
     for (const aid of ses.athletes) {
+      // Per-athlete duration overrides the session duration; missing/non-positive entries are skipped
+      const athMins = (ses.athMins || {})[aid];
+      const duration = Number.isFinite(Number(athMins)) && Number(athMins) > 0 ? Number(athMins) : Number(ses.duration);
+      if (!Number.isFinite(duration) || duration <= 0) continue;
       const rawRpe = (ses.athSrpe || {})[aid] != null ? ses.athSrpe[aid] : ses.srpe;
-      const parsedRpe = rawRpe == null ? 6 : Number(rawRpe);
-      const rpe = Number.isFinite(parsedRpe) ? parsedRpe : 6;
+      const parsedRpe = rawRpe == null ? 0 : Number(rawRpe);
+      const rpe = Number.isFinite(parsedRpe) ? parsedRpe : 0;
       Store.data.loadEntries.push({
         id: U.uid('le'), athleteId: aid, date: ses.date,
         rpe, duration,
@@ -344,8 +436,9 @@ Views.session = (() => {
           ? `<button class="btn sm primary" data-act="resume" title="继续计时">▶ 继续</button>
              <button class="btn sm danger" data-act="toggle-live" title="结束训练：询问是否保存并计算负荷">■ 结束训练</button>`
           : `<button class="btn sm primary" data-act="toggle-live" title="${done ? '重新开始本课训练（重新计时）' : '开始本课训练：填写过程自动保存，结束时询问是否保存并计算负荷'}">${done ? '▶ 再次开始训练' : '▶ 开始训练'}</button>
+             <button class="btn sm" data-act="manual" title="训练中未使用计时器：训练后手动填写时长并纳入负荷统计">✎ 手动补录</button>
              ${done ? `<button class="btn sm" data-act="load-summary" title="查看本节课个人与团队负荷摘要">📊 本课负荷</button>` : ''}`;
-      const statusChip = live ? '<span class="chip red">训练中 · 自动保存</span>' : paused ? '<span class="chip" style="background:color-mix(in oklch,var(--color-warning) 18%,transparent);color:var(--color-warning)">已暂停</span>' : done ? '<span class="chip volt">已完课</span>' : '';
+      const statusChip = live ? '<span class="chip red">训练中 · 自动保存</span>' : paused ? '<span class="chip" style="background:color-mix(in oklch,var(--color-warning) 18%,transparent);color:var(--color-warning)">已暂停</span>' : done ? `<span class="chip volt">已完课${ses.sManual ? ' · 手动补录' : ''}</span>` : '';
       card.innerHTML = `
         <div class="card-title">
           <h3 style="flex:1"><input class="ipt" data-f="name" value="${U.esc(ses.name)}" style="font-weight:700;font-size:15px;min-width:200px">
@@ -364,7 +457,7 @@ Views.session = (() => {
         <div class="row" style="gap:16px;margin-bottom:14px">
           <div class="field"><label>训练时长</label>
             ${(live || paused) ? `<div class="row" style="gap:8px"><span class="chip ${paused ? '' : 'red'}" style="font-size:13px">⏱ <span data-timer="${ses.id}">${fmtElapsed(ses)}</span></span>${ses.time ? `<span class="hint">${ses.time} 开始${paused ? ' · 已暂停' : ''}</span>` : ''}</div>`
-              : done ? `<div class="row" style="gap:8px"><span class="chip volt" style="margin-top:4px">实际 ${ses.duration ?? 0} 分钟</span>${ses.time ? `<span class="hint">${ses.time}–${ses.sEnd || ''}</span>` : ''}</div>`
+              : done ? `<div class="row" style="gap:8px"><span class="chip volt" style="margin-top:4px">实际 ${ses.duration ?? 0} 分钟</span>${ses.time ? `<span class="hint">${ses.time}${ses.sEnd ? '–' + ses.sEnd : ''}</span>` : ''}</div>`
                 : ''}
           </div>
           <div class="field"><label>备赛运动员</label>
@@ -452,7 +545,9 @@ Views.session = (() => {
               const rows = ses.rows || [];
               const res = ses.results[aid] || [];
               const srpe = (ses.athSrpe || {})[aid];
-              const au = srpe != null ? Math.round(srpe * (Number(ses.duration) || 0)) : null;
+              const athMins = (ses.athMins || {})[aid];
+              const effMins = athMins != null && Number(athMins) > 0 ? Number(athMins) : (Number(ses.duration) || 0);
+              const au = srpe != null ? Math.round(srpe * effMins) : null;
               const dose = Store.sessionActualDose(ses, aid, { actualOnly: true });
               const doseChips = [
                 dose.kg ? `吨位 ${U.fmt(dose.kg)} kg` : '',
@@ -471,8 +566,8 @@ Views.session = (() => {
                 </div>
                 <div class="row" style="gap:10px;margin-bottom:8px;align-items:center">
                   <span class="hint" style="white-space:nowrap">完课 sRPE</span>
-                  <input type="range" min="0" max="10" step="0.5" value="${srpe ?? 6}" data-srpe="${aid}" style="flex:1">
-                  <span class="val" style="min-width:28px;text-align:right">${srpe ?? 6}</span>
+                  <input type="range" min="0" max="10" step="0.5" value="${srpe ?? 0}" data-srpe="${aid}" style="flex:1">
+                  <span class="val" style="min-width:28px;text-align:right">${srpe ?? 0}</span>
                 </div>
                 ${rows.length ? `<div class="tbl-wrap athlete-plan-wrap" style="overflow-x:auto"><table class="tbl athlete-plan-table" style="font-size:11px">
                   <thead><tr><th class="athlete-action-col">动作 / 组</th><th class="r">计划%</th><th class="r">计划量</th><th class="r">实际重量</th><th class="r">实际完成</th><th class="r">RIR</th><th class="r">完成</th><th class="r">估算1RM</th></tr></thead>
@@ -645,6 +740,8 @@ Views.session = (() => {
             ses.athletes = (ses.athletes || []).filter((id) => id !== aid);
             if (ses.results) delete ses.results[aid];
             if (ses.athSrpe) delete ses.athSrpe[aid];
+            if (ses.athMins) delete ses.athMins[aid];
+            if (ses.athDose) delete ses.athDose[aid];
             Store.data.loadEntries = Store.data.loadEntries.filter((e) => e.athleteId !== aid || e.sessionId !== ses.id);
             Store.save(); syncEntries(ses); mount(); UI.toast('已移除该运动员', 'ok');
           });
@@ -660,8 +757,10 @@ Views.session = (() => {
             const au = ses.athSrpe[aid];
             const chip = box.querySelector(`[data-au="${aid}"]`);
             if (chip) {
-              chip.className = 'chip ' + (au != null ? 'volt' : '');
-              chip.textContent = au != null ? `负荷 ${U.fmt(Math.round(au * (Number(ses.duration) || 0)))} AU` : '未填';
+              const am = Number((ses.athMins || {})[aid]);
+              const mins = am > 0 ? am : (Number(ses.duration) || 0);
+              chip.className = 'chip ' + (au != null && au > 0 ? 'volt' : '');
+              chip.textContent = au != null ? `负荷 ${U.fmt(Math.round(au * mins))} AU` : '未填';
             }
           };
         });
@@ -785,6 +884,8 @@ Views.session = (() => {
           UI.toast('继续训练：计时恢复', 'ok');
         };
       }
+      const manBtn = card.querySelector('[data-act="manual"]');
+      if (manBtn) manBtn.onclick = () => showManualEntryModal(ses, () => mount());
       // 开始/结束训练：sStatus 持久化（live/paused/done）；填写过程 onchange 已自动 Store.save
       card.querySelector('[data-act="toggle-live"]').onclick = () => {
         if (ses.sStatus === 'live' || ses.sStatus === 'paused') {
@@ -810,6 +911,7 @@ Views.session = (() => {
         } else {
           // 开始训练：自动计时开始（取消手动时间段填写）
           ses.sStatus = 'live';
+          ses.sManual = false;
           ses.sStartDate = new Date().toISOString();
           ses.sElapsed = ses.sElapsed || 0;
           ses.sStart = ses.time = new Date().toTimeString().slice(0, 5);
@@ -821,7 +923,7 @@ Views.session = (() => {
       const sumBtn = card.querySelector('[data-act="load-summary"]');
       if (sumBtn) sumBtn.onclick = () => showLoadSummaryModal(ses, Number(ses.duration) || 0, (save) => {
         if (save) { syncEntries(ses); Store.save(); mount(); UI.toast('负荷已更新并纳入统计', 'ok'); }
-      });
+      }, { title: `本课负荷 · ${U.esc(ses.name)} · 本节课负荷` });
     };
     render();
     return card;
