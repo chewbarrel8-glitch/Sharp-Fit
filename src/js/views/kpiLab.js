@@ -1349,48 +1349,83 @@ Views.kpiLab = (() => {
     (Views[r] || Views.macro).mount($('#view'));
   }
 
-  // ---------- 导出 PDF 报告 ----------
+  // ---------- Export PDF report ----------
+  // Exports every user-generated panel: centered title, each chart as an image,
+  // insight text and data table per panel. Algorithm notes are intentionally excluded.
   function exportPdf() {
     if (!state.panels.length) { UI.toast('请先生成看板，再导出报告', 'err'); return; }
-    const old = document.getElementById('klPrintWrap');
-    if (old) old.remove();
-    const wrap = document.createElement('div');
-    wrap.id = 'klPrintWrap';
-    wrap.style.display = 'none';
     const dateStr = U.today();
     const macroName = state.macroName || '未命名计划';
     const rangeStr = (state.from ? U.md(state.from) : '全部') + ' ~ ' + (state.to ? U.md(state.to) : '至今');
-    let html = `<div style="font-family:inherit;padding:20px">
-      <h1 style="margin:0 0 6px;font-size:22px;color:#000">自定义 KPI 分析报告</h1>
-      <p style="margin:0 0 16px;color:#666;font-size:13px">训练计划：${U.esc(macroName)}　|　分析区间：${U.esc(rangeStr)}　|　生成日期：${U.esc(dateStr)}</p>`;
+    const tempCharts = [];
+    // capture one panel's chart as PNG; re-render offscreen when the live instance is unavailable
+    const chartImg = (pn, res) => {
+      if (res.empty) return `<p style="color:#999;font-size:12px">${U.esc(res.empty)}</p>`;
+      let chart = state.charts.find((c) => c && c.getDom && c.getDom() && c.getDom().id === 'klcv-' + pn.id);
+      if (!chart) {
+        const off = document.createElement('div');
+        off.style.cssText = 'position:fixed;left:-10000px;top:0;width:920px;height:360px';
+        document.body.appendChild(off);
+        try {
+          const before = state.charts.length;
+          drawPanel(pn, res, off);
+          chart = state.charts.slice(before).find((c) => c && c.getDom && c.getDom() === off) || null;
+          if (chart) tempCharts.push(chart); else off.remove();
+        } catch (e) { chart = null; off.remove(); }
+      }
+      if (!chart) return '';
+      try { return `<img src="${chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })}" style="max-width:100%;margin:10px 0"/>`; }
+      catch (e) { return ''; }
+    };
+    let body = `<h1>自定义 KPI 分析报告</h1>
+      <p class="sub">训练计划：${U.esc(macroName)}　|　分析区间：${U.esc(rangeStr)}　|　生成日期：${U.esc(dateStr)}</p>`;
     state.panels.forEach((pn, idx) => {
       const m = METHODS.find((x) => x.id === pn.methodId);
       if (!m) return;
       const ctx = buildCtx(pn.aths, pn.metrics, pn.from, pn.to);
       let res;
       try { res = m.compute(ctx); } catch (e) { res = { empty: '计算出错：' + e.message, insight: '' }; }
-      const chart = state.charts.find((c) => c && c.getDom && c.getDom() && c.getDom().id === 'klcv-' + pn.id);
-      let img = '';
-      if (chart) {
-        try { img = `<img src="${chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })}" style="max-width:100%;margin:10px 0"/>`; } catch (e) { img = ''; }
-      }
       const insightText = (res.insight || '').replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]+>/g, '');
-      const algoText = (m.algo || '').trim();
-      html += `<div class="print-panel" style="border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:16px">
-        <h2 style="margin:0 0 8px;font-size:16px;color:#000">${CN_NUM[idx] || (idx + 1)} ${U.esc(m.name)}</h2>
-        <p style="margin:0 0 8px;color:#666;font-size:12px">图型：${U.esc(CTYPES[pn.chartType] ? CTYPES[pn.chartType].name : pn.chartType)}　|　范围：${pn.aths.length} 人 · ${pn.metrics.length} 项</p>
-        ${img}
-        <h3 style="margin:12px 0 6px;font-size:13px;color:#333">结果解读</h3>
-        <p style="margin:0 0 10px;font-size:12px;line-height:1.8;color:#333;white-space:pre-wrap">${U.esc(insightText)}</p>
-        <h3 style="margin:12px 0 6px;font-size:13px;color:#333">算法说明</h3>
-        <pre style="margin:0 0 10px;font-size:11px;line-height:1.7;color:#555;background:#f5f5f5;padding:10px;border-radius:6px">${U.esc(algoText)}</pre>`;
-      if (res.table && res.table.rows.length) {
-        html += `<h3 style="margin:12px 0 6px;font-size:13px;color:#333">数据表</h3>${tblHTML(res.table)}`;
-      }
-      html += `</div>`;
+      body += `<div class="print-panel">
+        <h2>${CN_NUM[idx] || (idx + 1)} ${U.esc(m.name)}</h2>
+        <p class="meta">图型：${U.esc(CTYPES[pn.chartType] ? CTYPES[pn.chartType].name : pn.chartType)}　|　范围：${pn.aths.length} 人 · ${pn.metrics.length} 项</p>
+        ${chartImg(pn, res)}
+        <h3>结果解读</h3>
+        <p class="insight">${U.esc(insightText) || '—'}</p>`;
+      if (res.table && res.table.rows.length) body += `<h3>数据表</h3>${tblHTML(res.table)}`;
+      body += `</div>`;
     });
-    html += `</div>`;
-    wrap.innerHTML = html;
+    // dispose offscreen charts created only for image capture
+    tempCharts.forEach((c) => { try { const d = c.getDom(); c.dispose(); if (d && d.parentNode === document.body) d.remove(); } catch (e) { /* noop */ } });
+    state.charts = state.charts.filter((c) => !tempCharts.includes(c));
+    const css = `
+      body { font-family:'PingFang SC','Microsoft YaHei',sans-serif; color:#1e293b; padding:36px 40px; font-size:12px; background:#fff; }
+      h1 { text-align:center; font-size:22px; margin:0 0 6px; }
+      p.sub { text-align:center; color:#64748b; font-size:12px; margin:0 0 18px; }
+      .print-panel { border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px; break-inside:avoid; }
+      .print-panel h2 { font-size:16px; margin:0 0 6px; }
+      .meta { color:#666; font-size:11px; margin:0 0 4px; }
+      h3 { font-size:13px; margin:12px 0 6px; }
+      .insight { font-size:12px; line-height:1.8; white-space:pre-wrap; margin:0; }
+      table { width:100%; border-collapse:collapse; }
+      th, td { border:1px solid #ccc; padding:6px; font-size:11px; text-align:left; }
+      img { max-width:100%; }`;
+    // Electron: render offscreen in main process and let the user pick the save path
+    if (window.api && window.api.exportPDF) {
+      const doc = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>${css}</style></head><body>${body}</body></html>`;
+      window.api.exportPDF(`KPI分析报告_${dateStr}.pdf`, doc).then((r) => {
+        if (r && r.ok) UI.toast('PDF 已导出', 'ok');
+        else if (!(r && r.canceled)) UI.toast('PDF 导出失败' + (r && r.msg ? '：' + r.msg : ''), 'err');
+      });
+      return;
+    }
+    // browser fallback: hidden print wrap + system print dialog
+    const old = document.getElementById('klPrintWrap');
+    if (old) old.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'klPrintWrap';
+    wrap.style.display = 'none';
+    wrap.innerHTML = `<style>${css}</style>${body}`;
     document.body.appendChild(wrap);
     UI.toast('已生成打印视图，正在打开打印对话框…', 'ok');
     setTimeout(() => window.print(), 300);

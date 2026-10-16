@@ -932,6 +932,36 @@ Views.profile = (() => {
 
     const parts = [];
 
+    // 恢复记录（最近 14 条，含准备度评分）
+    const wells = Store.wellnessOf(ath.id).slice(0, 14);
+    if (wells.length) {
+      const rows = wells.map((w) => {
+        let acwr = null;
+        try {
+          const es = (Store.data.loadEntries || []).filter((e) => e.athleteId === ath.id).map((e) => Object.assign({}, e, { load: e.load != null ? Number(e.load) : (Number(e.rpe)||0)*(Number(e.duration)||0) })).sort((a,b)=>a.date.localeCompare(b.date));
+          const s = Calc.dailySeries(es, U.addDays(w.date,-111), w.date);
+          acwr = s.length ? Calc.acwr(s, s.length-1) : null;
+        } catch(e) { acwr = null; }
+        const rd = Store.readinessScore(w, acwr);
+        const rdColor = rd >= 80 ? 'var(--color-success)' : rd >= 60 ? 'var(--color-warning)' : 'var(--color-danger)';
+        return `<tr>
+          <td>${U.md(w.date)}</td>
+          <td class="r num">${w.sleepHours != null ? w.sleepHours + 'h' : '—'}${w.sleepEff != null ? ' · ' + w.sleepEff + '%' : ''}</td>
+          <td class="r num">${w.hrv ?? '—'}${w.rhr != null ? ' / ' + w.rhr : ''}</td>
+          <td class="r">${w.fatigue ?? '—'}</td>
+          <td class="r">${w.soreness ?? '—'}</td>
+          <td class="r">${w.mood ?? '—'}</td>
+          <td class="r num" style="color:${rdColor};font-weight:700">${rd ?? '—'}</td>
+          <td style="font-size:11px;color:var(--color-ink-muted)">${U.esc(w.note || '')}</td>
+        </tr>`;
+      }).join('');
+      parts.push(`<div class="card"><div class="card-title"><h3>恢复记录 · 准备度</h3><span class="hint">准备度综合 HRV/睡眠/疲劳/酸痛/情绪/ACWR（0-100）</span></div>
+        <div class="tbl-wrap"><table class="tbl" style="font-size:12px">
+          <thead><tr><th>日期</th><th class="r">睡眠</th><th class="r">HRV/RHR</th><th class="r">疲劳</th><th class="r">酸痛</th><th class="r">情绪</th><th class="r">准备度</th><th>备注</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div></div>`);
+    }
+
     // ① 无数据提示（头部信息/操作按钮已合并进顶部运动员栏）
     if (!hasAnyData) {
       parts.push(`<p class="hint" style="margin:0 0 12px">暂无体能数据——点击顶部「＋ 添加体能数据」录入身体成分、体能指标与 FMS（每次需选择日期）；1RM 请点击「记录 1RM」。</p>`);

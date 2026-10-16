@@ -429,7 +429,7 @@ Views.settings = (() => {
       cfgKey: 'kpiDashboards', catalog: () => Store.KPI_WIDGET_CATALOG, groups: () => Store.KPI_WIDGET_GROUPS,
       title: 'KPI 看板', desc: '为 KPI 分析页面定制需要展示的指标与图表。可以建立多套看板，按场景切换。',
       newWidgets: [{ id: 'c_pct', size: 'primary' }, { id: 'c_rm', size: 'primary' }],
-      sizeHint: '主组件占两列宽、突出关键图表（如团队百分位 / 1RM 力量变化）；次组件占一列，指标块占四分之一列。',
+      sizeHint: '主组件占两列宽、突出关键图表（如团队百分位 / 1RM 力量变化）；次组件占一列。',
       switchHint: '在「08 KPI 分析」页面顶部 chip 行点击看板名即可切换，可随时回来编辑。'
     }
   };
@@ -515,7 +515,8 @@ Views.settings = (() => {
     });
     $('#stDashNew', body).onclick = () => {
       const id = U.uid('d');
-      cfg.items.push({ id, name: '新看板 ' + (cfg.items.length + 1), scope: 'personal', isDefault: false, widgets: K.newWidgets.map((w) => ({ id: w.id, size: w.size })) });
+      const newWidgets = K.newWidgets.map((w) => ({ id: w.id, size: w.size }));
+      cfg.items.push({ id, name: '新看板 ' + (cfg.items.length + 1), scope: 'personal', isDefault: false, widgets: newWidgets, widgetsTeam: newWidgets.map((w) => ({ ...w })) });
       cfg.activeId = id;
       Store.save();
       editDashboard(id, () => renderDashboards(body, kind), kind);
@@ -529,11 +530,19 @@ Views.settings = (() => {
     const cfg = Store.data.settings[K.cfgKey];
     const item = cfg && cfg.items.find((x) => x.id === id);
     if (!item) { UI.toast('看板不存在', 'err'); return; }
-    // Local edit copy: widgets array of { id, size } ; committed on save
-    const local = { name: item.name, scope: item.scope, widgets: (item.widgets || []).map((w) => ({ id: w.id, size: w.size })) };
-    const widgetById = (wid) => local.widgets.find((w) => w.id === wid);
+    // Local edit copy: separate widget lists per scope (independent)
+    const local = {
+      name: item.name,
+      scope: item.scope || 'personal',
+      widgetsPersonal: (item.widgets || []).map((w) => ({ id: w.id, size: w.size })),
+      widgetsTeam: (item.widgetsTeam || item.widgets || []).map((w) => ({ id: w.id, size: w.size }))
+    };
+    // Active widget list based on current scope toggle
+    const curWidgets = () => local.scope === 'team' ? local.widgetsTeam : local.widgetsPersonal;
+    const widgetById = (wid) => curWidgets().find((w) => w.id === wid);
     const renderRows = () => K.groups().map((g) => {
       const items = catalog.filter((w) => w.group === g.id);
+      if (!items.length) return '';
       return `<div class="ed-group">
         <div class="ed-group-h">${U.esc(g.name)}<span>${items.length}</span></div>
         <div class="ed-grid">
@@ -556,8 +565,9 @@ Views.settings = (() => {
       </div>`;
     }).join('');
     const renderSel = () => {
-      if (!local.widgets.length) return `<div class="hint" style="padding:8px 0">还未选择组件，从下方组件目录勾选。</div>`;
-      return local.widgets.map((w, i) => {
+      const list = curWidgets();
+      if (!list.length) return `<div class="hint" style="padding:8px 0">还未选择组件，从下方组件目录勾选。</div>`;
+      return list.map((w, i) => {
         const meta = catalog.find((m) => m.id === w.id);
         const name = meta ? meta.name : w.id;
         return `<span class="ed-pill ${w.size === 'primary' ? 'is-primary' : ''}"><i>${i + 1}</i>${U.esc(name)}<button type="button" class="ed-pill-x" data-rm="${U.esc(w.id)}" aria-label="移除">×</button></span>`;
@@ -576,17 +586,20 @@ Views.settings = (() => {
             </div>
           </div>
         </div>
-        <div class="ed-selected"><div class="ed-selected-h">已选组件（添加顺序）</div><div class="ed-selected-list" id="edSel">${renderSel()}</div></div>
+        <div class="ed-selected"><div class="ed-selected-h"><span>已选组件（添加顺序）</span><button type="button" class="ed-copy-btn" id="edCopyToTeam" title="Use the personal widget list for the team view as well">复制个人配置到团队</button></div><div class="ed-selected-list" id="edSel">${renderSel()}</div></div>
         <div class="ed-catalog" id="edCatalog">${renderRows()}</div>
       </div>`,
       footer: `<button class="btn ghost" data-x>取消</button><button class="btn primary" data-ok>保存</button>`,
       onMount(ov, close) {
         const name = ov.querySelector('#edName');
         name.oninput = () => { local.name = name.value.trim() || '未命名看板'; };
-        // Scope toggle
+        // Scope toggle: switch active widget list (personal & team are independent)
         ov.querySelectorAll('[data-scope]').forEach((b) => b.onclick = () => {
+          if (b.dataset.scope === local.scope) return;
           local.scope = b.dataset.scope;
           ov.querySelectorAll('[data-scope]').forEach((x) => x.classList.toggle('on', x.dataset.scope === local.scope));
+          cat.innerHTML = renderRows();
+          ov.querySelector('#edSel').innerHTML = renderSel();
         });
         // Catalog: checkbox + size buttons (delegated)
         const cat = ov.querySelector('#edCatalog');
@@ -595,13 +608,13 @@ Views.settings = (() => {
           if (!cell || e.target.type !== 'checkbox') return;
           const wid = cell.dataset.wid;
           const meta = catalog.find((m) => m.id === wid);
+          const list = curWidgets();
           if (e.target.checked) {
-            if (!widgetById(wid)) local.widgets.push({ id: wid, size: meta ? meta.dsize : 'secondary' });
+            if (!widgetById(wid)) list.push({ id: wid, size: meta ? meta.dsize : 'secondary' });
           } else {
-            const idx = local.widgets.findIndex((w) => w.id === wid);
-            if (idx >= 0) local.widgets.splice(idx, 1);
+            const idx = list.findIndex((w) => w.id === wid);
+            if (idx >= 0) list.splice(idx, 1);
           }
-          // Re-render catalog + selected list (preserve focus on the same cell if possible)
           const focusedWid = wid;
           cat.innerHTML = renderRows();
           ov.querySelector('#edSel').innerHTML = renderSel();
@@ -625,18 +638,30 @@ Views.settings = (() => {
           const x = e.target.closest('[data-rm]');
           if (!x) return;
           const wid = x.dataset.rm;
-          const idx = local.widgets.findIndex((w) => w.id === wid);
-          if (idx >= 0) local.widgets.splice(idx, 1);
+          const list = curWidgets();
+          const idx = list.findIndex((w) => w.id === wid);
+          if (idx >= 0) list.splice(idx, 1);
           cat.innerHTML = renderRows();
           sel.innerHTML = renderSel();
         });
+        // Clone the personal widget list into the team list (independent lists stay independent afterwards)
+        ov.querySelector('#edCopyToTeam').onclick = () => {
+          if (!local.widgetsPersonal.length) { UI.toast('个人组件列表为空，暂无可复制的配置', 'err'); return; }
+          local.widgetsTeam = local.widgetsPersonal.map((w) => ({ ...w }));
+          if (local.scope === 'team') {
+            cat.innerHTML = renderRows();
+            sel.innerHTML = renderSel();
+          }
+          UI.toast('已复制：团队组件配置与个人一致，保存后生效', 'ok');
+        };
         // Save
         ov.querySelector('[data-ok]').onclick = () => {
           const nameVal = name.value.trim() || '未命名看板';
-          if (!local.widgets.length) { UI.toast('请至少选择 1 个组件', 'err'); return; }
+          if (!curWidgets().length) { UI.toast(`请至少为「${local.scope === 'team' ? '团队' : '个人'}」选择 1 个组件`, 'err'); return; }
           item.name = nameVal;
           item.scope = local.scope;
-          item.widgets = local.widgets.map((w) => ({ id: w.id, size: w.size }));
+          item.widgets = local.widgetsPersonal.map((w) => ({ id: w.id, size: w.size }));
+          item.widgetsTeam = local.widgetsTeam.map((w) => ({ id: w.id, size: w.size }));
           Store.save();
           close();
           UI.toast('看板已保存', 'ok');

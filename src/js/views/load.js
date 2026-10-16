@@ -3,11 +3,12 @@
 Views.load = (() => {
   const state = { athleteId: null, mode: 'personal', weekView: 'strain', fltMesoId: 'all', fltMicroId: 'all', pieAthId: 'all', ovLevel: 'session', ovDate: U.today(), ovSesId: null, loadTab: 'detail', dateFrom: U.addDays(U.today(), -41), dateTo: U.today(), dashboardId: null };
 
-  // Widget id → underlying chart element id (KPI cards have no inner id; matched via data-wid)
+  // Widget id → underlying chart element id (all widgets render a chart; matched via data-wid)
   const WIDGET_ELEM_ID = {
     g_acwr: 'loadAcwrGauge', g_tsb: 'loadTsbGauge',
     c_daily: 'loadDailyChart', c_risk: 'loadRiskChart',
     c_tonnage: 'loadTonnageChart', c_session: 'loadSessionChart',
+    c_time: 'loadTimeChart',
     c_distance: 'loadDistanceChart', c_work: 'loadWorkTimeChart',
     d_type: 'loadTypeChart', d_time: 'loadTypeTimeChart'
   };
@@ -1334,10 +1335,10 @@ Views.load = (() => {
     const currentTsb = Number.isFinite(currentTsbValue) ? currentTsbValue : null;
     const dose = hasActualRange ? Store.rangeActualDose(safeFrom, actualTo, athleteId) : emptyDose();
     const doseSeries = hasActualRange ? Store.dailyDoseSeries(safeFrom, actualTo, athleteId) : [];
-    const auTotal = U.sum(visible, ({ point }) => Number(point.load) || 0);
     const sessionCounts = {};
     const typeCounts = {};
     const typeMinutes = {};
+    const courseMinutesByDate = {};
     let courseMinutes = 0;
     sessions.forEach((s) => {
       sessionCounts[s.date] = (sessionCounts[s.date] || 0) + 1;
@@ -1345,6 +1346,7 @@ Views.load = (() => {
       typeCounts[type] = (typeCounts[type] || 0) + 1;
       const minutes = Number(s.duration) || 0;
       typeMinutes[type] = (typeMinutes[type] || 0) + minutes;
+      courseMinutesByDate[s.date] = (courseMinutesByDate[s.date] || 0) + minutes;
       courseMinutes += minutes;
     });
     const countByType = Object.entries(typeCounts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
@@ -1355,7 +1357,6 @@ Views.load = (() => {
     const acwrMeta = acwrInfo(currentAcwr);
     const tsbMeta = currentTsb == null ? { desc: '数据不足', cls: '' } : tsbState(currentTsb);
     const metricHelp = {
-      au: '筛选范围内的内部负荷总量。单条负荷记录优先读取 load；缺失时用 RPE × 时长（分钟）计算，按日期累加。AU 是无量纲内部负荷单位，用于同一运动员观察训练压力变化，不宜跨运动员直接比较。',
       acwr: '急慢性负荷比。算法：ATL（7 日 EWMA）÷ CTL（42 日 EWMA），取筛选结束日；系列从筛选开始日前 84 天预热。0.8–1.3 是部分队列研究常用的监控区间，不是适用于所有运动员的安全阈值，也不能单独预测损伤。',
       tsb: '训练压力平衡。算法：TSB = CTL（42 日 EWMA）− ATL（7 日 EWMA），取筛选结束日。正值表示近期 ATL 低于长期 CTL，通常解读为相对新鲜；负值表示近期负荷高于慢性基线，通常解读为疲劳累积。它是训练状态模型指标，不是直接的竞技表现测量。',
       tonnage: '筛选范围内已完课力量动作吨位：逐运动员、逐动作行汇总重量 × 完成次数，再将 kg 换算为 t。逐组实际记录优先；缺少实际剂量时，已完课训练会回退到保存的计划剂量。不同动作的吨位不能代表完全相同的生理刺激。',
@@ -1364,10 +1365,7 @@ Views.load = (() => {
       distance: '筛选范围内已完课训练课中距离量纲动作的完成距离总和，按米汇总并换算为 km。实际逐组数据优先，缺失时回退保存的计划剂量；反映距离体量，不含速度或强度信息。',
       work: '筛选范围内已完课训练课中时间量纲动作的做功时间总和：Σ 实际完成秒数，换算为分钟显示。包含动作本身的工作时间，不等于课程总时长，也不包含课程里未记为时间量纲动作的休息时间。'
     };
-    const metric = (title, value, unit, note, cls = '', help = '', references = '') => `<div class="load-metric ${cls}"><div class="k">${title}${help ? qTip(help, references) : ''}</div><div class="v">${value}<small>${unit}</small></div><div class="d">${note}</div></div>`;
-
-    // Widget section builders: each returns a wrapped <section> with data-wid + data-size
-    const kpiSec = (wid, size, m) => `<section class="card ld-widget ld-kpi ${m.cls || ''}" data-wid="${wid}" data-size="${size}">${m.html}</section>`;
+    // Widget section builders: every widget renders an ECharts visualization
     const chartSec = (wid, size, elemId, title, tipHtml, subText, ariaLabel, extraCls) => `<section class="card ld-widget ld-chart ${extraCls || ''}" data-wid="${wid}" data-size="${size}"><div class="card-title"><h3>${title}${tipHtml || ''}</h3><span class="sub">${subText}</span></div><div class="chart ${extraCls || ''}" id="${elemId}" role="img" aria-label="${ariaLabel}"></div></section>`;
 
     // Active dashboard widget layout; fallback to default catalog if missing
@@ -1378,22 +1376,15 @@ Views.load = (() => {
     const hasWidget = (id) => widgets.some((w) => w.id === id);
     const sizeOf = (id) => (widgets.find((w) => w.id === id) || {}).size || 'secondary';
 
-    // Per-widget HTML builders (kept inline to access local closures: metric/qTip/refs)
+    // Per-widget HTML builders (kept inline to access local closures: qTip/refs)
     const W = {
-      m_au: (sz) => kpiSec('m_au', sz, { html: metric('AU · 内部负荷总量', U.fmt(Math.round(auTotal)), 'AU', '筛选范围累积', '', metricHelp.au, refTxt('foster01', 'impellizzeri19')) }),
-      m_acwr: (sz) => kpiSec('m_acwr', sz, { html: metric('ACWR · 急慢性比', acwrMeta.label, '', `${acwrMeta.desc} · 截止 ${U.md(actualTo)}`, acwrMeta.cls, metricHelp.acwr, refTxt('hulin14', 'gabbett16', 'impellizzeri20')) }),
-      m_tsb: (sz) => kpiSec('m_tsb', sz, { html: metric('TSB · 训练压力平衡', currentTsb == null ? '—' : U.fmt(Math.round(currentTsb)), currentTsb == null ? '' : 'AU/日', `${tsbMeta.desc} · CTL − ATL`, tsbMeta.cls, metricHelp.tsb, refTxt('banister91', 'coggan', 'skiba13')) }),
-      m_tonnage: (sz) => kpiSec('m_tonnage', sz, { html: metric('训练吨位', U.fmt(Math.round(dose.kg / 100) / 10, 1), 't', `${U.fmt(Math.round(dose.kg))} kg`, '', metricHelp.tonnage, refTxt('impellizzeri19', 'halson14')) }),
-      m_sessions: (sz) => kpiSec('m_sessions', sz, { html: metric('训练课次', U.fmt(sessions.length), '节', `${Object.keys(typeCounts).length} 种课型`, '', metricHelp.sessions, refTxt('foster01', 'halson14')) }),
-      m_time: (sz) => kpiSec('m_time', sz, { html: metric('训练时长', U.fmt(Math.round(courseMinutes / 6) / 10, 1), 'h', `${U.fmt(Math.round(courseMinutes))} min`, '', metricHelp.courseTime, refTxt('halson14')) }),
-      m_distance: (sz) => kpiSec('m_distance', sz, { html: metric('训练距离', U.fmt(dose.m / 1000, 1), 'km', `${U.fmt(Math.round(dose.m))} m`, '', metricHelp.distance, refTxt('halson14', 'impellizzeri19')) }),
-      m_work: (sz) => kpiSec('m_work', sz, { html: metric('动作做功时间', U.fmt(dose.s / 60, 1), 'min', `${U.fmt(Math.round(dose.s))} s`, '', metricHelp.work, refTxt('halson14')) }),
       g_acwr: (sz) => chartSec('g_acwr', sz, 'loadAcwrGauge', 'ACWR 指针看板', qTip(metricHelp.acwr, refTxt('hulin14', 'gabbett16', 'impellizzeri20')), '筛选结束日', '急慢性负荷比 ACWR 指针仪表', ''),
       g_tsb: (sz) => chartSec('g_tsb', sz, 'loadTsbGauge', 'TSB 指针看板', qTip(metricHelp.tsb, refTxt('banister91', 'coggan', 'skiba13')), '筛选结束日', '训练压力平衡 TSB 指针仪表', ''),
       c_daily: (sz) => chartSec('c_daily', sz, 'loadDailyChart', 'AU 内部负荷看板', qTip('柱形为每日内部负荷 AU：Σ 当日每人 RPE × 训练时长（分钟）；折线为 ATL：7 日 EWMA，反映近期负荷变化。AU 是个体内部负荷指标，主要用于观察个人或同队趋势。', refTxt('foster01', 'impellizzeri19')), '每日 AU · ATL 7 日 EWMA', '每日内部负荷与 ATL 趋势', ''),
       c_risk: (sz) => chartSec('c_risk', sz, 'loadRiskChart', 'ACWR 与 TSB 趋势', qTip(metricHelp.acwr + ' TSB = CTL(42 日 EWMA) − ATL(7 日 EWMA)，正值通常表示相对新鲜，负值表示近期负荷高于慢性基线。区间只作训练监控参考。', refTxt('hulin14', 'gabbett16', 'impellizzeri20', 'banister91', 'coggan')), 'ACWR 0.8–1.3 为文献常见参考范围', 'ACWR 与 TSB 趋势', ''),
       c_tonnage: (sz) => chartSec('c_tonnage', sz, 'loadTonnageChart', '吨位变化', qTip(metricHelp.tonnage, refTxt('impellizzeri19', 'halson14')), 't / 日', '每日吨位', ''),
       c_session: (sz) => chartSec('c_session', sz, 'loadSessionChart', '训练课次与类型', qTip(metricHelp.sessions, refTxt('foster01', 'halson14')), '已完成训练课', '每日训练课次', ''),
+      c_time: (sz) => chartSec('c_time', sz, 'loadTimeChart', '训练时长', qTip(metricHelp.courseTime, refTxt('halson14')), 'min / 日', '每日课程时长', ''),
       c_distance: (sz) => chartSec('c_distance', sz, 'loadDistanceChart', '训练距离', qTip(metricHelp.distance, refTxt('halson14', 'impellizzeri19')), 'km / 日', '每日训练距离', ''),
       c_work: (sz) => chartSec('c_work', sz, 'loadWorkTimeChart', '动作做功时间', qTip(metricHelp.work, refTxt('halson14')), 'min / 日', '每日动作做功时间', ''),
       d_type: (sz) => chartSec('d_type', sz, 'loadTypeChart', '训练课类型分布', qTip('按训练课的 session.type 分组，每节已完课记录计 1 节；环图比例 = 该类型课次 ÷ 所选范围全部课次。用于观察课型结构，不代表训练负荷大小。', refTxt('halson14', 'impellizzeri19')), '按课次占比', '训练课类型课次占比', 'load-donut'),
@@ -1526,6 +1517,10 @@ Views.load = (() => {
     if (hasWidget('c_session')) {
       const sessionChart = UI.chart(el.querySelector('#loadSessionChart'));
       sessionChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => '节') }), xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: '节', minInterval: 1 }, commonAxis), series: [{ type: 'bar', name: '训练课次', data: dates.map((date) => sessionCounts[date] || 0), barMaxWidth: 18, itemStyle: { color: UI.cssVar('var(--color-warning)'), borderRadius: [3, 3, 0, 0] } }] });
+    }
+    if (hasWidget('c_time')) {
+      const timeChart = UI.chart(el.querySelector('#loadTimeChart'));
+      timeChart.setOption({ grid: baseGrid, tooltip: Object.assign({ trigger: 'axis' }, UI.tooltipCommon, { formatter: (ps) => axisTooltip(ps, () => 'min') }), xAxis: labelsAxis, yAxis: Object.assign({ type: 'value', name: 'min' }, commonAxis), series: [{ type: 'bar', name: '课程时长', data: dates.map((date) => courseMinutesByDate[date] || 0), barMaxWidth: 18, itemStyle: { color: UI.cssVar('var(--color-purple)'), borderRadius: [3, 3, 0, 0] } }] });
     }
 
     const drawShare = (id, data, total, unit) => {

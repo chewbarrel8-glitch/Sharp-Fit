@@ -19,6 +19,7 @@ const Store = {
       sessions: [],                // {id, date, name, type, time, duration, srpe, athSrpe:{[athId]:rpe}, athletes:[ids], rows:[...], results:{[athId]:[{w,actual,rir}]}, note}
       athletes: [],                // {id, name, sport, gender, birth, note, macroId, avatar} avatar=160px JPEG dataURL（''=未上传，回退姓名首字）
       loadEntries: [],             // {id, athleteId, date, rpe, duration, source, sessionId, note}
+      wellness: [],                // {id, athleteId, date, sleepHours, sleepEff, hrv, rhr, fatigue, soreness, mood, stress, note}
       athleteRm: {},               // { [athleteId]: { [exerciseId]: {value, date, testDate, history:[{value,date,method,source}]} } } 运动员专属 1RM
       tests: [],                    // {id, athleteId, exerciseId, weight, reps, rir, estimated1RM, date, source, note}
       profiles: [],                 // {id, athleteId, date, height, weight, bodyFat, verticalJump, sprint20m, broadJump, laneAgility, pullUpReps, reactionTime, cmjHeight, imtpPeak, ybtLeft, ybtRight, asymm, fms:{squat,hurdle,lunge,shoulder,aslr,tspu,rotary}, fmsAsymm:[key], note}
@@ -89,25 +90,17 @@ const Store = {
   },
 
   // Load dashboard widget catalog: id → { id, name, group, dsize }
-  // group: 'kpi' | 'gauge' | 'chart' | 'donut' ; dsize: 'primary' | 'secondary'
+  // group: 'gauge' | 'chart' | 'donut' ; dsize: 'primary' | 'secondary'
   WIDGET_CATALOG: [
-    // KPI cards (8)
-    { id: 'm_au',       name: '内部负荷总量',   group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_acwr',     name: 'ACWR 急慢性比',  group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_tsb',      name: 'TSB 压力平衡',   group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_tonnage',  name: '训练吨位',       group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_sessions', name: '训练课次',       group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_time',     name: '训练时长',       group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_distance', name: '训练距离',      group: 'kpi',   dsize: 'secondary' },
-    { id: 'm_work',     name: '动作做功时间',   group: 'kpi',   dsize: 'secondary' },
     // Pointer gauges (2)
     { id: 'g_acwr',     name: 'ACWR 指针',      group: 'gauge', dsize: 'secondary' },
     { id: 'g_tsb',      name: 'TSB 指针',       group: 'gauge', dsize: 'secondary' },
-    // Trend charts (6)
+    // Trend charts (7)
     { id: 'c_daily',    name: '每日负荷 + ATL', group: 'chart', dsize: 'primary' },
     { id: 'c_risk',     name: 'ACWR / TSB 趋势', group: 'chart', dsize: 'primary' },
     { id: 'c_tonnage',  name: '吨位变化',       group: 'chart', dsize: 'secondary' },
     { id: 'c_session',  name: '训练课次',       group: 'chart', dsize: 'secondary' },
+    { id: 'c_time',     name: '训练时长',       group: 'chart', dsize: 'secondary' },
     { id: 'c_distance', name: '训练距离',       group: 'chart', dsize: 'secondary' },
     { id: 'c_work',     name: '做功时间',       group: 'chart', dsize: 'secondary' },
     // Donut shares (2)
@@ -115,7 +108,6 @@ const Store = {
     { id: 'd_time',     name: '训练时间占比',   group: 'donut',  dsize: 'secondary' }
   ],
   WIDGET_GROUPS: [
-    { id: 'kpi',   name: 'KPI 指标' },
     { id: 'gauge', name: '指针仪表' },
     { id: 'chart', name: '趋势图' },
     { id: 'donut', name: '占比环图' }
@@ -134,18 +126,11 @@ const Store = {
           widgets: [
             { id: 'c_daily',    size: 'primary' },
             { id: 'c_risk',     size: 'primary' },
-            { id: 'm_au',       size: 'secondary' },
-            { id: 'm_acwr',     size: 'secondary' },
-            { id: 'm_tsb',      size: 'secondary' },
-            { id: 'm_tonnage',  size: 'secondary' },
-            { id: 'm_sessions', size: 'secondary' },
-            { id: 'm_time',     size: 'secondary' },
-            { id: 'm_distance', size: 'secondary' },
-            { id: 'm_work',     size: 'secondary' },
             { id: 'g_acwr',     size: 'secondary' },
             { id: 'g_tsb',      size: 'secondary' },
             { id: 'c_tonnage',  size: 'secondary' },
             { id: 'c_session',  size: 'secondary' },
+            { id: 'c_time',     size: 'secondary' },
             { id: 'c_distance', size: 'secondary' },
             { id: 'c_work',     size: 'secondary' },
             { id: 'd_type',     size: 'secondary' },
@@ -156,11 +141,32 @@ const Store = {
     };
   },
 
-  // Migration: backfill missing loadDashboards setting (single-shot, idempotent)
+  // Migration: backfill missing loadDashboards setting; strip retired widgets (single-shot, idempotent)
   migrateLoadDashboards() {
     const cfg = Store.data.settings.loadDashboards;
-    if (cfg && Array.isArray(cfg.items) && cfg.items.length) return;
-    Store.data.settings.loadDashboards = Store.defaultLoadDashboards();
+    if (!cfg || !Array.isArray(cfg.items) || !cfg.items.length) {
+      Store.data.settings.loadDashboards = Store.defaultLoadDashboards();
+      return;
+    }
+    // Retired numeric tiles: their information is fully covered by chart widgets.
+    // m_time is upgraded to the new daily-duration bar chart c_time.
+    const RETIRED = ['m_au', 'm_acwr', 'm_tsb', 'm_tonnage', 'm_sessions', 'm_distance', 'm_work'];
+    const UPGRADE = { m_time: 'c_time' };
+    const sanitize = (ws) => {
+      if (!Array.isArray(ws)) return ws;
+      const out = [];
+      ws.forEach((w) => {
+        if (RETIRED.indexOf(w.id) >= 0) return;
+        const id = UPGRADE[w.id] || w.id;
+        if (out.some((x) => x.id === id)) return;   // drop duplicates created by the upgrade
+        out.push(id === w.id ? w : { id, size: w.size });
+      });
+      return out;
+    };
+    cfg.items.forEach((it) => {
+      it.widgets = sanitize(it.widgets || []);
+      if (Array.isArray(it.widgetsTeam)) it.widgetsTeam = sanitize(it.widgetsTeam);
+    });
   },
 
   // Active load dashboard object (resolves to first item if activeId stale)
@@ -171,34 +177,49 @@ const Store = {
   },
 
   // KPI dashboard widget catalog: id → { id, name, group, dsize }
-  // group: 'kpi' | 'compare' | 'trend' | 'profile'
+  // group: 'compare' | 'trend' | 'profile'
   KPI_WIDGET_CATALOG: [
-    // Metric tiles (4)
-    { id: 'm_pct',   name: '平均百分位',     group: 'kpi',     dsize: 'secondary' },
-    { id: 'm_lead',  name: '团队领先项数',   group: 'kpi',     dsize: 'secondary' },
-    { id: 'm_gain',  name: '显著进步项数',   group: 'kpi',     dsize: 'secondary' },
-    { id: 'm_fms',   name: 'FMS 总分',       group: 'kpi',     dsize: 'secondary' },
-    // Compare charts (4)
-    { id: 'c_pct',   name: '团队百分位横条', group: 'compare', dsize: 'primary' },
-    { id: 'c_delta', name: '基线→当前变化',  group: 'compare', dsize: 'secondary' },
-    { id: 'c_zbar',  name: 'Z 分数偏差图',   group: 'compare', dsize: 'secondary' },
-    { id: 'c_rank',  name: '团队综合评分排名', group: 'compare', dsize: 'secondary' },
-    // Trend charts (2)
-    { id: 'c_rm',    name: '1RM 力量变化',   group: 'trend',   dsize: 'primary' },
-    { id: 'c_trend', name: '纵向追踪趋势',   group: 'trend',   dsize: 'secondary' },
-    // Profile charts (2)
-    { id: 'c_radar', name: '综合能力雷达图', group: 'profile', dsize: 'secondary' },
-    { id: 'c_fms',   name: 'FMS 动作筛查',   group: 'profile', dsize: 'secondary' }
+    // Compare charts
+    { id: 'c_pct',   name: '百分位图表',       group: 'compare', dsize: 'primary',   scope: 'both' },
+    { id: 'c_delta', name: '基线→当前变化',    group: 'compare', dsize: 'secondary', scope: 'both' },
+    { id: 'c_zbar',  name: 'Z 分数偏差图',     group: 'compare', dsize: 'secondary', scope: 'both' },
+    { id: 'c_rank',  name: '综合评分排名',     group: 'compare', dsize: 'secondary', scope: 'both' },
+    // Trend charts
+    { id: 'c_rm',    name: '1RM 力量变化',     group: 'trend',   dsize: 'primary',   scope: 'both' },
+    { id: 'c_trend', name: '纵向追踪趋势',     group: 'trend',   dsize: 'secondary', scope: 'both' },
+    // Profile charts
+    { id: 'c_radar', name: '能力雷达图',       group: 'profile', dsize: 'secondary', scope: 'both' },
+    { id: 'c_fms',   name: 'FMS 动作筛查',     group: 'profile', dsize: 'secondary', scope: 'both' },
+    // Visual extras
+    { id: 'c_subradar',   name: '分项能力雷达',   group: 'profile', dsize: 'secondary', scope: 'both' },
+    { id: 'c_pcthist',    name: '百分位分布直方图', group: 'compare', dsize: 'secondary', scope: 'both' },
+    { id: 'c_scoretrend', name: '综合评分趋势',   group: 'trend',   dsize: 'secondary', scope: 'both' },
+    { id: 'c_bodytrend',  name: '身体成分趋势',   group: 'trend',   dsize: 'secondary', scope: 'both' }
   ],
   KPI_WIDGET_GROUPS: [
-    { id: 'kpi',     name: '指标速览' },
     { id: 'compare', name: '对比分析' },
     { id: 'trend',   name: '趋势追踪' },
     { id: 'profile', name: '能力画像' }
   ],
 
-  // Default KPI dashboard layout: 2 primary (percentile + 1RM trend) + all secondary
+  // Default KPI dashboard layout: chart widgets only (metric overview tiles were retired)
   defaultKpiDashboards() {
+    const personalWidgets = [
+      { id: 'c_pct',   size: 'primary' },
+      { id: 'c_rm',    size: 'primary' },
+      { id: 'c_delta', size: 'secondary' },
+      { id: 'c_radar', size: 'primary' },
+      { id: 'c_zbar',  size: 'primary' },
+      { id: 'c_fms',   size: 'primary' },
+      { id: 'c_trend', size: 'primary' },
+      { id: 'c_rank',  size: 'primary' }
+    ];
+    const teamWidgets = [
+      { id: 'c_pct',         size: 'primary' },
+      { id: 'c_radar',       size: 'primary' },
+      { id: 'c_zbar',        size: 'primary' },
+      { id: 'c_rank',        size: 'primary' }
+    ];
     return {
       activeId: 'default',
       items: [
@@ -207,20 +228,8 @@ const Store = {
           name: '默认看板',
           scope: 'personal',
           isDefault: true,
-          widgets: [
-            { id: 'c_pct',   size: 'primary' },
-            { id: 'm_pct',   size: 'secondary' },
-            { id: 'm_lead',  size: 'secondary' },
-            { id: 'm_gain',  size: 'secondary' },
-            { id: 'c_rm',    size: 'primary' },
-            { id: 'm_fms',   size: 'secondary' },
-            { id: 'c_delta', size: 'secondary' },
-            { id: 'c_radar', size: 'primary' },
-            { id: 'c_zbar',  size: 'primary' },
-            { id: 'c_fms',   size: 'primary' },
-            { id: 'c_trend', size: 'primary' },
-            { id: 'c_rank',  size: 'primary' }
-          ]
+          widgets: personalWidgets,
+          widgetsTeam: teamWidgets
         }
       ]
     };
@@ -229,8 +238,22 @@ const Store = {
   // Migration: backfill missing kpiDashboards setting (single-shot, idempotent)
   migrateKpiDashboards() {
     const cfg = Store.data.settings.kpiDashboards;
-    if (cfg && Array.isArray(cfg.items) && cfg.items.length) return;
-    Store.data.settings.kpiDashboards = Store.defaultKpiDashboards();
+    if (!cfg || !Array.isArray(cfg.items) || !cfg.items.length) {
+      Store.data.settings.kpiDashboards = Store.defaultKpiDashboards();
+      return;
+    }
+    // Retired overview tiles: strip from every saved dashboard (personal & team)
+    const RETIRED_TILES = ['m_pct', 'm_lead', 'm_gain', 'm_fms', 'm_team_count', 'm_team_metrics', 'm_team_cv', 'm_team_top'];
+    const stripTiles = (ws) => (Array.isArray(ws) ? ws.filter((w) => RETIRED_TILES.indexOf(w.id) < 0) : ws);
+    // Ensure every dashboard has widgetsTeam (independent team widget list)
+    cfg.items.forEach((it) => {
+      it.widgets = stripTiles(it.widgets || []);
+      if (!Array.isArray(it.widgetsTeam)) {
+        it.widgetsTeam = it.widgets.map((w) => ({ id: w.id, size: w.size }));
+      } else {
+        it.widgetsTeam = stripTiles(it.widgetsTeam);
+      }
+    });
   },
 
   // Active KPI dashboard object (resolves to first item if activeId stale)
@@ -887,6 +910,36 @@ const Store = {
   },
   sessionsOn(date) { return Store.data.sessions.filter((s) => s.date === date); },
   exercise(id) { return Store.data.exercises.find((e) => e.id === id); },
+
+  // Wellness 记录查询
+  wellnessOf(athleteId) {
+    return (Store.data.wellness || []).filter((w) => w.athleteId === athleteId).sort((a, b) => b.date.localeCompare(a.date));
+  },
+  wellnessAt(athleteId, date) {
+    return (Store.data.wellness || []).find((w) => w.athleteId === athleteId && w.date === date) || null;
+  },
+
+  // 训练准备度评分（0-100）：HRV + 睡眠 + 疲劳 + 酸痛 + 情绪 + ACWR
+  readinessScore(w, acwr) {
+    if (!w) return null;
+    let score = 100;
+    if (w.hrv != null && w.hrv < 30) score -= 15;
+    else if (w.hrv != null && w.hrv < 50) score -= 8;
+    if (w.sleepHours != null && w.sleepHours < 6) score -= 15;
+    else if (w.sleepHours != null && w.sleepHours < 7) score -= 8;
+    if (w.sleepEff != null && w.sleepEff < 80) score -= 10;
+    else if (w.sleepEff != null && w.sleepEff < 85) score -= 5;
+    if (w.fatigue != null) score -= (w.fatigue - 3) * 8;
+    if (w.soreness != null) score -= (w.soreness - 3) * 8;
+    if (w.mood != null) score -= (5 - w.mood) * 6;
+    if (w.stress != null) score -= (w.stress - 3) * 6;
+    if (acwr != null) {
+      if (acwr > 1.5) score -= 25;
+      else if (acwr > 1.3) score -= 12;
+      else if (acwr < 0.8) score -= 10;
+    }
+    return Math.max(0, Math.min(100, Math.round(score)));
+  },
 
   activeMacroAthletes() {
     const mac = Store.activeMacro();

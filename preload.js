@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   saveDB: (data) => ipcRenderer.invoke('db:save', data),
   exportFile: (name, data) => ipcRenderer.invoke('export:file', { name, data }),
   exportFileAs: (name, data, filters) => ipcRenderer.invoke('export:saveAs', { name, data, filters }),
+  exportPDF: (name, html) => ipcRenderer.invoke('export:pdf', { name, html }),
   appInfo: () => ipcRenderer.invoke('app:info'),
   openPath: (p) => ipcRenderer.invoke('shell:openPath', p),
   backupDB: () => ipcRenderer.invoke('db:backup'),

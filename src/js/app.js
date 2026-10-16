@@ -9,7 +9,8 @@
     { id: 'load', no: '05', label: '负荷管理', sub: 'ACWR 仪表盘 · 个人/团队负荷看板' },
     { id: 'profile', no: '06', label: '运动员档案', sub: '基本信息 · 统一体能数据源 · 1RM' },
     { id: 'kpi', no: '07', label: 'KPI 分析', sub: 'KPI 看板 · 雷达 · FMS · 时期对比 · 团队排名' },
-    { id: 'settings', no: '08', label: '设置', sub: '外观背景 · 数据备份 · 使用手册 · 项目库 · 关于' }
+    { id: 'readiness', no: '08', label: '准备状态', sub: 'HRV · 睡眠 · 疲劳 · 酸痛 · 情绪 · ACWR 综合评分' },
+    { id: 'settings', no: '09', label: '设置', sub: '外观背景 · 数据备份 · 使用手册 · 项目库 · 关于' }
   ];
 
   function currentRoute() {

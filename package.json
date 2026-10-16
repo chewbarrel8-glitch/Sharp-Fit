@@ -1,8 +1,8 @@
 {
   "name": "training-plan-platform",
   "productName": "Sharp Fit",
-  "version": "1.2.1",
-  "description": "体能教练训练计划管理平台",
+  "version": "1.2.3",
+  "description": "Sharp Fit - Training Plan Management Platform for Strength & Conditioning Coaches",
   "main": "main.js",
   "author": "Coach",
   "license": "MIT",
@@ -55,7 +55,8 @@
         {
           "target": "nsis",
           "arch": [
-            "x64"
+            "x64",
+            "arm64"
           ]
         }
       ],

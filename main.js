@@ -48,6 +48,30 @@ ipcMain.handle('export:saveAs', async (e, { name, data, filters }) => {
   }
 });
 
+// Export PDF: render printable HTML in a hidden offscreen window, print to PDF,
+// then show a system Save dialog so the user picks the destination
+ipcMain.handle('export:pdf', async (e, { name, html }) => {
+  let pdfWin = null;
+  try {
+    pdfWin = new BrowserWindow({ show: false, width: 794, height: 1123 });
+    await pdfWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    const pdf = await pdfWin.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
+    const parent = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showSaveDialog(parent, {
+      defaultPath: path.join(app.getPath('downloads'), name),
+      filters: [{ name: 'PDF 文件', extensions: ['pdf'] }]
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(r.filePath, pdf);
+    return { ok: true, path: r.filePath };
+  } catch (err) {
+    console.error('export pdf failed', err);
+    return { ok: false, msg: err.message };
+  } finally {
+    if (pdfWin && !pdfWin.isDestroyed()) pdfWin.destroy();
+  }
+});
+
 // 应用信息：版本号 / 数据目录 / 下载目录（设置页展示）
 ipcMain.handle('app:info', () => ({
   version: app.getVersion(),

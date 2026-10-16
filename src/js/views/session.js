@@ -49,6 +49,101 @@ Views.session = (() => {
     });
   }
 
+  // Build printable A4 HTML for session PDF export: session type as centered title,
+  // info grid (date / cycle / goals / headcount), plan table, per-athlete plan tables
+  // with a blank sRPE line for handwriting after printing
+  function buildPdfHtml(ses) {
+    const esc = U.esc;
+    const mic = Store.data.micros.find((m) => ses.date >= m.startDate && ses.date <= m.endDate);
+    const meso = mic ? Store.data.mesos.find((x) => x.id === mic.mesoId) : null;
+    const goals = mic ? Store.goalsOf(mic) : { primary: [], secondary: [] };
+    const goalTxt = goals.primary.map((g) => esc(g.name))
+      .concat(goals.secondary.map((g) => esc(g.name) + '<span class="sec">（次要）</span>')).join('、') || '—';
+    const cycleTxt = [meso && meso.name, mic && mic.name].filter(Boolean).map(esc).join(' / ') || '—';
+    const rows = ses.rows || [];
+    const athIds = ses.athletes || [];
+    const unitOf = (r) => { const m = Calc.metricOf(r); return m === 'reps' ? '次' : m === 'distance' ? 'm' : 's'; };
+    const doseOf = (r) => { const m = Calc.metricOf(r); return m === 'distance' ? r.dist : m === 'duration' ? r.dur : r.reps; };
+    const blkLabel = (r) => {
+      if (!r.blkId) return '';
+      const blk = (ses.blocks || []).find((b) => b.id === r.blkId);
+      return blk ? esc(blk.label || '') + Store.blockPos(rows, r) + ' ' : '';
+    };
+    const planRows = rows.map((r, i) => {
+      const ex = Store.exercise(r.exId);
+      const dose = doseOf(r);
+      return `<tr><td class="c">${i + 1}</td><td>${blkLabel(r)}${esc(ex ? ex.name : '—')}</td>
+        <td class="c">${Number(r.sets) || '—'}</td>
+        <td class="c">${dose != null && dose !== '' ? esc(String(dose)) + unitOf(r) : '—'}</td>
+        <td class="c">${Calc.rowUnit(r) === 'kg' && r.pct != null ? esc(String(r.pct)) + '%' : '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="c muted">无计划行</td></tr>';
+    const planW = (aid, r) => { const rm = Store.athRm(aid, r.exId); return rm && r.pct ? Calc.weightFromPct(rm.value, r.pct) : r.weight; };
+    const athSections = athIds.map((aid) => {
+      const a = Store.data.athletes.find((x) => x.id === aid);
+      if (!a) return '';
+      const body = rows.map((r, i) => {
+        const ex = Store.exercise(r.exId);
+        const dose = doseOf(r);
+        const isKg = Calc.rowUnit(r) === 'kg';
+        const pw = isKg ? planW(aid, r) : null;
+        return `<tr><td class="c">${i + 1}</td><td>${blkLabel(r)}${esc(ex ? ex.name : '—')}</td>
+          <td class="c">${isKg && r.pct != null ? esc(String(r.pct)) + '%' : '—'}</td>
+          <td class="c">${isKg ? (pw ? U.fmt(pw) + ' kg' : '—') : '—'}</td>
+          <td class="c"></td>
+          <td class="c"></td>
+          <td class="c">${Number(r.sets) || '—'} × ${dose != null && dose !== '' ? esc(String(dose)) + unitOf(r) : '—'}</td></tr>`;
+      }).join('') || '<tr><td colspan="7" class="c muted">无计划行</td></tr>';
+      return `<div class="ath" style="break-inside:avoid">
+        <div class="ath-head"><b>${esc(a.name)}</b><span class="srpe">sRPE：<span class="blank"></span>/ 10</span></div>
+        <table><thead><tr><th style="width:26px">#</th><th style="width:150px">动作</th><th style="width:76px">计划%1RM</th><th style="width:74px">计划重量</th><th style="width:78px">实际重量</th><th style="width:46px">RIR</th><th>计划量（组×单组）</th></tr></thead>
+        <tbody>${body}</tbody></table>
+      </div>`;
+    }).join('') || '<p class="muted">尚未选择参训运动员</p>';
+    return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><style>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family:'PingFang SC','Microsoft YaHei',sans-serif; color:#1e293b; padding:36px 40px; font-size:12px; }
+      h1 { text-align:center; font-size:24px; font-weight:700; letter-spacing:4px; margin-bottom:4px; }
+      .sub { text-align:center; color:#64748b; font-size:13px; margin-bottom:18px; }
+      .info { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; border:1px solid #cbd5e1; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
+      .info .it { display:flex; gap:8px; } .info .k { color:#64748b; white-space:nowrap; } .info .v { font-weight:600; }
+      .sec { color:#64748b; font-size:11px; font-weight:400; }
+      h2 { font-size:14px; margin:16px 0 8px; padding-left:8px; border-left:3px solid #1e293b; }
+      table { width:100%; border-collapse:collapse; table-layout:fixed; }
+      th, td { border:1px solid #cbd5e1; padding:6px 8px; text-align:left; word-break:break-word; }
+      th { background:#f1f5f9; font-weight:600; white-space:nowrap; } td.c, th.c { text-align:center; } .c { text-align:center; }
+      .muted { color:#94a3b8; }
+      .ath { margin-bottom:14px; }
+      .ath-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:13px; }
+      .srpe { color:#334155; font-size:12px; }
+      .blank { display:inline-block; width:90px; border-bottom:1.5px solid #334155; height:14px; margin:0 6px; }
+    </style></head><body>
+      <h1>${esc(ses.type || ses.name || '训练课')}</h1>
+      <div class="sub">${esc(ses.name || '')}${ses.time ? ' · ' + esc(ses.time) : ''}</div>
+      <div class="info">
+        <div class="it"><span class="k">训练日期</span><span class="v">${esc(ses.date || '—')}</span></div>
+        <div class="it"><span class="k">训练周期</span><span class="v">${cycleTxt}</span></div>
+        <div class="it"><span class="k">训练目标</span><span class="v">${goalTxt}</span></div>
+        <div class="it"><span class="k">训练人数</span><span class="v">${athIds.length} 人</span></div>
+      </div>
+      <h2>训练课计划</h2>
+      <table><thead><tr><th style="width:28px">#</th><th style="width:180px">动作</th><th style="width:50px">组数</th><th>单组量</th><th style="width:60px">%1RM</th></tr></thead>
+      <tbody>${planRows}</tbody></table>
+      ${ses.note ? `<p style="margin-top:8px"><span class="muted">课程备注：</span>${esc(ses.note)}</p>` : ''}
+      <h2>个人训练计划</h2>
+      ${athSections}
+    </body></html>`;
+  }
+
+  // Export current session as PDF via main-process print (user picks save location)
+  async function exportSessionPdf(ses) {
+    if (!window.api || !window.api.exportPDF) { UI.toast('当前环境不支持导出 PDF', 'err'); return; }
+    const name = `${ses.date || ''}_${ses.type || ses.name || '训练课'}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
+    const r = await window.api.exportPDF(name, buildPdfHtml(ses));
+    if (r && r.ok) UI.toast('PDF 已导出', 'ok');
+    else if (r && r.canceled) { /* user canceled: no toast */ }
+    else UI.toast('PDF 导出失败' + (r && r.msg ? '：' + r.msg : ''), 'err');
+  }
+
   // 自动计时：训练中课程卡上的 [data-timer] 每秒刷新（模块级单例，仅更新仍存在的节点）
   let liveTick = null;
   // 计算本节课累计训练时长（秒）：已累计段 + 当前 live 段；暂停时冻结
@@ -260,6 +355,7 @@ Views.session = (() => {
             ${ctrlBtn}
             ${statusChip}
             <button class="btn sm ghost" data-act="fold" title="折叠/展开本课详情（同日多课时折叠省空间）">${folded ? '展开 ▸' : '折叠 ▾'}</button>
+            <button class="btn sm" data-act="pdf" title="导出本课 PDF：课型为标题，含日期/周期/目标/人数、课计划与每人计划，sRPE 留空手填">导出PDF</button>
             <button class="btn sm" data-act="dup">复制课程</button>
             <button class="btn sm danger" data-act="del">删除</button>
           </div>
@@ -652,6 +748,7 @@ Views.session = (() => {
       card.querySelector('[data-act="ath"]').onclick = () => UI.athletePicker(ses.athletes || [], (ids) => {
         ses.athletes = ids; Store.save(); syncEntries(ses); mount();
       }, (Store.activeMacro() || {}).sport);
+      card.querySelector('[data-act="pdf"]').onclick = () => exportSessionPdf(ses);
       card.querySelector('[data-act="dup"]').onclick = () => {
         const cp = U.deepClone(ses);
         cp.id = U.uid('ses'); cp.name = ses.name + '（副本）';
