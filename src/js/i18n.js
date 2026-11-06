@@ -720,6 +720,7 @@ const I18n = (() => {
     '单组次数过高': 'Reps too high',
     '请用≤10次组重测': 'Retest with ≤10 reps/set',
     '偏高': 'Too high', '更新1RM': 'Update 1RM',
+    '记录 1RM': 'Log 1RM', '＋ 记录 1RM': '+ Log 1RM',
     '热身': 'Warm-up', '正式': 'Working',
     '该组实际重量': 'Actual weight for this set',
     '该组实际完成量（次/m/s）': 'Actual volume for this set (reps/m/s)',

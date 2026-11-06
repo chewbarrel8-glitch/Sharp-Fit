@@ -783,9 +783,10 @@ Views.profile = (() => {
         let rmQ = '';
         const renderRmRows = () => {
           const cur = Store.data.athleteRm[ov.querySelector('#rAth').value] || {};
+          const hasRec = Object.keys(cur).some((k) => cur[k] && cur[k].value);
           let list = Store.data.exercises;
           if (rmQ) list = list.filter((e) => (e.name || '').includes(rmQ) || (e.cat1 || '').includes(rmQ) || (e.cat2 || '').includes(rmQ) || (e.equip || '').includes(rmQ));
-          else list = list.filter((e) => cur[e.id] && cur[e.id].value);
+          else if (hasRec) list = list.filter((e) => cur[e.id] && cur[e.id].value);
           rmBox.innerHTML = list.map((e) => {
             const per = cur[e.id];
             const mark = per && per.value ? (per.history && /测试/.test(per.history[per.history.length - 1].method || '') ? '<span class="chip volt" style="font-size:10px">测试</span>' : '<span class="chip" style="font-size:10px">手动</span>') : '';
@@ -905,16 +906,18 @@ Views.profile = (() => {
         <span class="chip ${rmN ? 'volt' : ''}">1RM × ${rmN}</span>
         <span class="hint">名单 ${aths.length} 人</span>
       </div>
-      <div class="row" style="gap:6px;align-items:center">
+      <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap">
         <button class="btn sm ghost" id="profAthEdit">✎ 编辑</button>
         <button class="btn sm danger" id="profAthDel">✕ 删除</button>
         <button class="btn sm primary" id="pAdd">＋ 添加体能数据</button>
+        <button class="btn sm ghost" id="profRmAdd">＋ 记录 1RM</button>
         <button class="btn sm ghost" id="profKpiBtn" title="查看该运动员的体能分析">KPI 分析 ›</button>
       </div>`;
     el.querySelector('#profAthSel').onchange = (e) => { state.athleteId = e.target.value || null; state.rmCat = null; state.rmDate = null; mount(); };
     el.querySelector('#profAthEdit').onclick = () => athleteDialog(cur);
     el.querySelector('#profAthDel').onclick = () => delAthlete(cur);
     el.querySelector('#pAdd').onclick = () => profileDialog();
+    el.querySelector('#profRmAdd').onclick = () => rmDialog();
     el.querySelector('#profKpiBtn').onclick = () => { location.hash = '#/kpi'; };
   }
 

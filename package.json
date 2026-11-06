@@ -1,7 +1,7 @@
 {
   "name": "training-plan-platform",
   "productName": "Sharp Fit",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Sharp Fit - Training Plan Management Platform for Strength & Conditioning Coaches",
   "main": "main.js",
   "author": "Coach",
@@ -71,8 +71,20 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64", "arm64"] },
-        { "target": "deb", "arch": ["x64", "arm64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "build/icon_1024.png",
       "category": "Sports",
